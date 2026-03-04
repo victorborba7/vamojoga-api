@@ -43,7 +43,7 @@ class GameService:
         games = await self.repository.list_all(skip=skip, limit=limit)
         return [GameResponse.model_validate(g) for g in games]
 
-    async def search_games(self, query: str, limit: int = 10) -> list[GameResponse]:
+    async def search_games(self, query: str, limit: int = 20) -> list[GameResponse]:
         games = await self.repository.search_by_name(query, limit=limit)
         return [GameResponse.model_validate(g) for g in games]
 

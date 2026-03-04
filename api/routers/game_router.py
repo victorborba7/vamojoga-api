@@ -36,7 +36,7 @@ async def list_games(
 @router.get("/search/", response_model=list[GameResponse])
 async def search_games(
     q: str = "",
-    limit: int = 10,
+    limit: int = 20,
     session: AsyncSession = Depends(get_session),
     _current_user: User = Depends(get_current_user),
 ) -> list[GameResponse]:

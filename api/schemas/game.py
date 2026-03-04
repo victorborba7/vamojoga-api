@@ -12,8 +12,11 @@ class GameCreate(BaseModel):
     min_players: int = 2
     max_players: int = 10
     # BGG metadata (optional)
+    bgg_id: int | None = None
     bgg_rank: int | None = None
     bgg_rating: float | None = None
+    bgg_avg_rating: float | None = None
+    bgg_users_rated: int | None = None
     subtitle: str | None = None
     year: int | None = None
     best_players: str | None = None
@@ -22,6 +25,7 @@ class GameCreate(BaseModel):
     min_age: int | None = None
     weight: float | None = None
     bgg_type: str | None = None
+    is_expansion: bool = False
 
 
 class GameUpdate(BaseModel):
@@ -31,8 +35,11 @@ class GameUpdate(BaseModel):
     min_players: int | None = None
     max_players: int | None = None
     # BGG metadata (optional)
+    bgg_id: int | None = None
     bgg_rank: int | None = None
     bgg_rating: float | None = None
+    bgg_avg_rating: float | None = None
+    bgg_users_rated: int | None = None
     subtitle: str | None = None
     year: int | None = None
     best_players: str | None = None
@@ -41,6 +48,7 @@ class GameUpdate(BaseModel):
     min_age: int | None = None
     weight: float | None = None
     bgg_type: str | None = None
+    is_expansion: bool | None = None
 
 
 # --- Response ---
@@ -54,8 +62,11 @@ class GameResponse(BaseModel):
     is_active: bool
     created_at: datetime
     # BGG metadata
+    bgg_id: int | None
     bgg_rank: int | None
     bgg_rating: float | None
+    bgg_avg_rating: float | None
+    bgg_users_rated: int | None
     subtitle: str | None
     year: int | None
     best_players: str | None
@@ -64,5 +75,6 @@ class GameResponse(BaseModel):
     min_age: int | None
     weight: float | None
     bgg_type: str | None
+    is_expansion: bool
 
     model_config = {"from_attributes": True}
