@@ -1,20 +1,34 @@
-# Byte-compiled / optimized / DLL files
+# ---- OS ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---- IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- Python (api/) ----
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Virtual environment
+*.egg-info/
+dist/
+build/
 .venv/
 venv/
 env/
 
-# Environment variables
+# ---- Environment ----
 .env
+.env.*
+!.env.example
 
-# IDE
-.vscode/
-.idea/
+# ---- Docker ----
+docker-compose.override.yml
 
-# OS
-.DS_Store
-Thumbs.db
+# ---- Misc ----
+*.pem
+coverage/
+*.log
