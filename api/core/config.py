@@ -10,10 +10,17 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # CORS — separe múltiplas origens por vírgula
+    ALLOWED_ORIGINS: str = "http://localhost:3000"
+
     # App
     APP_NAME: str = "VamoJoga API"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
