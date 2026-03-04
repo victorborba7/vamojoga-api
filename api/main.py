@@ -11,6 +11,8 @@ from api.routers.match_router import router as match_router
 from api.routers.ranking_router import router as ranking_router
 from api.routers.user_router import router as user_router
 from api.routers.friendship_router import router as friendship_router
+from api.routers.library_router import router as library_router
+from api.routers.wishlist_router import router as wishlist_router
 
 
 @asynccontextmanager
@@ -39,6 +41,8 @@ app.include_router(game_router, prefix="/api/v1")
 app.include_router(match_router, prefix="/api/v1")
 app.include_router(ranking_router, prefix="/api/v1")
 app.include_router(friendship_router, prefix="/api/v1")
+app.include_router(library_router, prefix="/api/v1")
+app.include_router(wishlist_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])
