@@ -10,10 +10,12 @@ from api.models.mechanic import Mechanic, GameMechanic
 from api.models.category import Category, GameCategory
 from api.models.designer import Designer, GameDesigner
 from api.models.publisher import Publisher, GamePublisher
+from api.models.scoring_template import ScoringTemplate, ScoringTemplateField, MatchTemplateScore
 
 __all__ = [
     "User", "Game", "Match", "MatchPlayer", "Friendship",
     "UserGameLibrary", "UserWishlist", "Collection", "CollectionMembro", "CollectionJogo",
     "Mechanic", "Category", "Designer", "Publisher",
     "GameMechanic", "GameCategory", "GameDesigner", "GamePublisher",
+    "ScoringTemplate", "ScoringTemplateField", "MatchTemplateScore",
 ]

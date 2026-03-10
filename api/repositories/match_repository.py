@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.models.game import Game
 from api.models.match import Match
 from api.models.match_player import MatchPlayer
+from api.models.scoring_template import ScoringTemplate
 from api.models.user import User
 
 
@@ -80,9 +81,12 @@ class MatchRepository:
                 Match.created_by,
                 Match.played_at,
                 Match.notes,
+                Match.scoring_template_id,
+                ScoringTemplate.name.label("scoring_template_name"),
                 Match.created_at,
             )
             .join(Game, Game.id == Match.game_id)
+            .outerjoin(ScoringTemplate, ScoringTemplate.id == Match.scoring_template_id)
             .where(Match.id == match_id)
         )
         result = await self.session.execute(statement)
@@ -97,6 +101,8 @@ class MatchRepository:
             "created_by": row.created_by,
             "played_at": row.played_at,
             "notes": row.notes,
+            "scoring_template_id": row.scoring_template_id,
+            "scoring_template_name": row.scoring_template_name,
             "created_at": row.created_at,
         }
 
@@ -129,9 +135,12 @@ class MatchRepository:
                 Match.created_by,
                 Match.played_at,
                 Match.notes,
+                Match.scoring_template_id,
+                ScoringTemplate.name.label("scoring_template_name"),
                 Match.created_at,
             )
             .join(Game, Game.id == Match.game_id)
+            .outerjoin(ScoringTemplate, ScoringTemplate.id == Match.scoring_template_id)
             .where(Match.id.in_(match_ids))
             .order_by(Match.played_at.desc())
         )
@@ -179,6 +188,8 @@ class MatchRepository:
                 "created_by": m.created_by,
                 "played_at": m.played_at,
                 "notes": m.notes,
+                "scoring_template_id": m.scoring_template_id,
+                "scoring_template_name": m.scoring_template_name,
                 "created_at": m.created_at,
                 "players": players_by_match.get(m.id, []),
             })

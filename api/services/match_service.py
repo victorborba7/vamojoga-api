@@ -6,18 +6,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.match import Match
 from api.models.match_player import MatchPlayer
+from api.models.scoring_template import MatchTemplateScore
 from api.models.user import User
 from api.repositories.game_repository import GameRepository
 from api.repositories.match_repository import MatchRepository
+from api.repositories.scoring_template_repository import ScoringTemplateRepository
 from api.repositories.user_repository import UserRepository
 from api.schemas.match import MatchCreate, MatchPlayerResponse, MatchResponse
+from api.schemas.scoring_template import MatchTemplateScoreResponse
 
 
 class MatchService:
     def __init__(self, session: AsyncSession) -> None:
+        self.session = session
         self.match_repo = MatchRepository(session)
         self.game_repo = GameRepository(session)
         self.user_repo = UserRepository(session)
+        self.template_repo = ScoringTemplateRepository(session)
 
     async def create_match(
         self, data: MatchCreate, current_user: User
@@ -54,6 +59,22 @@ class MatchService:
                     detail=f"Usuário {user_id} não encontrado",
                 )
 
+        # Validar template se fornecido
+        template_name = None
+        if data.scoring_template_id:
+            template = await self.template_repo.get_template_by_id(data.scoring_template_id)
+            if not template:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Template de pontuação não encontrado",
+                )
+            if not template.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Template de pontuação está inativo",
+                )
+            template_name = template.name
+
         # Criar partida
         played_at = data.played_at or datetime.now(timezone.utc)
         match = Match(
@@ -61,6 +82,7 @@ class MatchService:
             created_by=current_user.id,
             played_at=played_at.replace(tzinfo=None),
             notes=data.notes,
+            scoring_template_id=data.scoring_template_id,
         )
         created_match = await self.match_repo.create_match(match)
 
@@ -77,6 +99,22 @@ class MatchService:
         ]
         created_players = await self.match_repo.create_match_players(match_players)
 
+        # Criar scores de template se houver
+        player_map = {p.user_id: mp for p, mp in zip(data.players, created_players)}
+        for p_data in data.players:
+            if p_data.template_scores:
+                scores = [
+                    MatchTemplateScore(
+                        match_player_id=player_map[p_data.user_id].id,
+                        template_field_id=ts.template_field_id,
+                        numeric_value=ts.numeric_value,
+                        boolean_value=ts.boolean_value,
+                        ranking_value=ts.ranking_value,
+                    )
+                    for ts in p_data.template_scores
+                ]
+                await self.template_repo.create_match_template_scores(scores)
+
         return MatchResponse(
             id=created_match.id,
             game_id=created_match.game_id,
@@ -85,6 +123,8 @@ class MatchService:
             created_by=created_match.created_by,
             played_at=created_match.played_at,
             notes=created_match.notes,
+            scoring_template_id=created_match.scoring_template_id,
+            scoring_template_name=template_name,
             created_at=created_match.created_at,
             players=[
                 MatchPlayerResponse(
@@ -108,6 +148,24 @@ class MatchService:
 
         players = await self.match_repo.get_match_players_with_username(match_id)
 
+        player_responses = []
+        for p in players:
+            ts_list = []
+            if match_data.get("scoring_template_id"):
+                raw_scores = await self.template_repo.get_match_player_template_scores(p["id"])
+                ts_list = [MatchTemplateScoreResponse(**ts) for ts in raw_scores]
+            player_responses.append(
+                MatchPlayerResponse(
+                    id=p["id"],
+                    user_id=p["user_id"],
+                    username=p["username"],
+                    position=p["position"],
+                    score=p["score"],
+                    is_winner=p["is_winner"],
+                    template_scores=ts_list,
+                )
+            )
+
         return MatchResponse(
             id=match_data["id"],
             game_id=match_data["game_id"],
@@ -116,18 +174,10 @@ class MatchService:
             created_by=match_data["created_by"],
             played_at=match_data["played_at"],
             notes=match_data["notes"],
+            scoring_template_id=match_data.get("scoring_template_id"),
+            scoring_template_name=match_data.get("scoring_template_name"),
             created_at=match_data["created_at"],
-            players=[
-                MatchPlayerResponse(
-                    id=p["id"],
-                    user_id=p["user_id"],
-                    username=p["username"],
-                    position=p["position"],
-                    score=p["score"],
-                    is_winner=p["is_winner"],
-                )
-                for p in players
-            ],
+            players=player_responses,
         )
 
     async def get_user_matches(
@@ -145,6 +195,8 @@ class MatchService:
                 created_by=m["created_by"],
                 played_at=m["played_at"],
                 notes=m["notes"],
+                scoring_template_id=m.get("scoring_template_id"),
+                scoring_template_name=m.get("scoring_template_name"),
                 created_at=m["created_at"],
                 players=[
                     MatchPlayerResponse(

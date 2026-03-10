@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from api.schemas.scoring_template import MatchTemplateScoreResponse, TemplateScoreEntry
+
 
 # --- Request ---
 class MatchPlayerCreate(BaseModel):
@@ -10,12 +12,14 @@ class MatchPlayerCreate(BaseModel):
     position: int
     score: int = 0
     is_winner: bool = False
+    template_scores: list[TemplateScoreEntry] = []
 
 
 class MatchCreate(BaseModel):
     game_id: UUID
     played_at: datetime | None = None
     notes: str | None = None
+    scoring_template_id: UUID | None = None
     players: list[MatchPlayerCreate] = Field(min_length=1)
 
 
@@ -27,6 +31,7 @@ class MatchPlayerResponse(BaseModel):
     position: int
     score: int
     is_winner: bool
+    template_scores: list[MatchTemplateScoreResponse] = []
 
     model_config = {"from_attributes": True}
 
@@ -39,6 +44,8 @@ class MatchResponse(BaseModel):
     created_by: UUID
     played_at: datetime
     notes: str | None
+    scoring_template_id: UUID | None = None
+    scoring_template_name: str | None = None
     players: list[MatchPlayerResponse] = []
     created_at: datetime
 
