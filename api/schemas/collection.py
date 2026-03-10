@@ -37,7 +37,7 @@ class CollectionJogoResponse(BaseModel):
     name: str
     bgg_id: int | None = None
     image_url: str | None = None
-    bgg_rating: float | None = None
+    bayes_rating: float | None = None
     year: int | None = None
     added_by: UUID
     added_by_username: str | None = None

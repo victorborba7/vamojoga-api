@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.game import Game
+from api.repositories.bgg_entity_repository import BggEntityRepository
 from api.repositories.game_repository import GameRepository
 from api.schemas.game import GameCreate, GameResponse, GameUpdate
 
@@ -11,6 +12,7 @@ from api.schemas.game import GameCreate, GameResponse, GameUpdate
 class GameService:
     def __init__(self, session: AsyncSession) -> None:
         self.repository = GameRepository(session)
+        self.entity_repository = BggEntityRepository(session)
 
     async def create_game(self, data: GameCreate) -> GameResponse:
         existing = await self.repository.get_by_name(data.name)
@@ -37,14 +39,19 @@ class GameService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Jogo não encontrado",
             )
-        return GameResponse.model_validate(game)
+        response = GameResponse.model_validate(game)
+        response.mechanics  = await self.entity_repository.get_mechanics(game.id)
+        response.categories = await self.entity_repository.get_categories(game.id)
+        response.designers  = await self.entity_repository.get_designers(game.id)
+        response.publishers = await self.entity_repository.get_publishers(game.id)
+        return response
 
     async def list_games(self, skip: int = 0, limit: int = 100) -> list[GameResponse]:
         games = await self.repository.list_all(skip=skip, limit=limit)
         return [GameResponse.model_validate(g) for g in games]
 
-    async def search_games(self, query: str, limit: int = 20) -> list[GameResponse]:
-        games = await self.repository.search_by_name(query, limit=limit)
+    async def search_games(self, query: str, limit: int = 20, exclude_expansions: bool = False) -> list[GameResponse]:
+        games = await self.repository.search_by_name(query, limit=limit, exclude_expansions=exclude_expansions)
         return [GameResponse.model_validate(g) for g in games]
 
     async def update_game(self, game_id: UUID, data: GameUpdate) -> GameResponse:

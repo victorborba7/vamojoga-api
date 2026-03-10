@@ -37,13 +37,14 @@ async def list_games(
 async def search_games(
     q: str = "",
     limit: int = 20,
+    exclude_expansions: bool = False,
     session: AsyncSession = Depends(get_session),
     _current_user: User = Depends(get_current_user),
 ) -> list[GameResponse]:
     if len(q.strip()) < 1:
         return []
     service = GameService(session)
-    return await service.search_games(q.strip(), limit=limit)
+    return await service.search_games(q.strip(), limit=limit, exclude_expansions=exclude_expansions)
 
 
 @router.get("/{game_id}", response_model=GameResponse)

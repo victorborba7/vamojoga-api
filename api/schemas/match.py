@@ -35,6 +35,7 @@ class MatchResponse(BaseModel):
     id: UUID
     game_id: UUID
     game_name: str | None = None
+    game_image_url: str | None = None
     created_by: UUID
     played_at: datetime
     notes: str | None
