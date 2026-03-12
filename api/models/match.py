@@ -16,5 +16,6 @@ class Match(SQLModel, table=True):
     created_by: uuid.UUID = Field(foreign_key="users.id")
     played_at: datetime = Field(default_factory=_utcnow)
     notes: str | None = Field(default=None, max_length=500)
+    match_mode: str = Field(default="individual", max_length=50)
     scoring_template_id: uuid.UUID | None = Field(default=None, foreign_key="scoring_templates.id")
     created_at: datetime = Field(default_factory=_utcnow)

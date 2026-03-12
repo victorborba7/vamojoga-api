@@ -46,6 +46,7 @@ class MatchResponse(BaseModel):
     created_by: UUID
     played_at: datetime
     notes: str | None
+    match_mode: str = "individual"
     scoring_template_id: UUID | None = None
     scoring_template_name: str | None = None
     players: list[MatchPlayerResponse] = []

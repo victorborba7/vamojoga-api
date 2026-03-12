@@ -89,6 +89,7 @@ class MatchService:
             created_by=current_user.id,
             played_at=played_at.replace(tzinfo=None),
             notes=data.notes,
+            match_mode=data.match_mode,
             scoring_template_id=data.scoring_template_id,
         )
         created_match = await self.match_repo.create_match(match)
@@ -140,6 +141,7 @@ class MatchService:
             created_by=created_match.created_by,
             played_at=created_match.played_at,
             notes=created_match.notes,
+            match_mode=created_match.match_mode,
             scoring_template_id=created_match.scoring_template_id,
             scoring_template_name=template_name,
             created_at=created_match.created_at,
@@ -192,6 +194,7 @@ class MatchService:
             created_by=match_data["created_by"],
             played_at=match_data["played_at"],
             notes=match_data["notes"],
+            match_mode=match_data["match_mode"],
             scoring_template_id=match_data.get("scoring_template_id"),
             scoring_template_name=match_data.get("scoring_template_name"),
             created_at=match_data["created_at"],
@@ -213,6 +216,7 @@ class MatchService:
                 created_by=m["created_by"],
                 played_at=m["played_at"],
                 notes=m["notes"],
+                match_mode=m["match_mode"],
                 scoring_template_id=m.get("scoring_template_id"),
                 scoring_template_name=m.get("scoring_template_name"),
                 created_at=m["created_at"],
