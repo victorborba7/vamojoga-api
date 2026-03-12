@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.achievement import Achievement, UserAchievement
@@ -22,10 +23,12 @@ class AchievementRepository:
         return achievement
 
     async def bulk_upsert_achievements(self, achievements: list[Achievement]) -> int:
-        """Insert achievements, skipping those whose name already exists. Returns count created."""
+        """Insert achievements, skipping those whose criteria already exist. Returns count created."""
         created = 0
         for a in achievements:
-            existing = await self.get_achievement_by_name(a.name)
+            existing = await self.get_achievement_by_criteria(
+                a.type, a.game_id, a.criteria_key, a.criteria_value
+            )
             if not existing:
                 self.session.add(a)
                 created += 1
@@ -40,6 +43,22 @@ class AchievementRepository:
 
     async def get_achievement_by_name(self, name: str) -> Achievement | None:
         stmt = select(Achievement).where(Achievement.name == name)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_achievement_by_criteria(
+        self,
+        type_: str,
+        game_id: UUID | None,
+        criteria_key: str,
+        criteria_value: int,
+    ) -> Achievement | None:
+        stmt = select(Achievement).where(
+            Achievement.type == type_,
+            Achievement.game_id == game_id,
+            Achievement.criteria_key == criteria_key,
+            Achievement.criteria_value == criteria_value,
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -69,11 +88,24 @@ class AchievementRepository:
         result = await self.session.execute(stmt)
         return set(result.scalars().all())
 
-    async def create_user_achievement(self, ua: UserAchievement) -> UserAchievement:
-        self.session.add(ua)
+    async def create_user_achievement(self, ua: UserAchievement) -> UserAchievement | None:
+        """Insert the user achievement, silently ignoring duplicates (race-condition safe)."""
+        stmt = (
+            pg_insert(UserAchievement)
+            .values(
+                id=ua.id,
+                user_id=ua.user_id,
+                achievement_id=ua.achievement_id,
+                match_id=ua.match_id,
+                unlocked_at=ua.unlocked_at,
+            )
+            .on_conflict_do_nothing(constraint="uq_user_achievement")
+            .returning(UserAchievement)
+        )
+        result = await self.session.execute(stmt)
         await self.session.commit()
-        await self.session.refresh(ua)
-        return ua
+        row = result.scalar_one_or_none()
+        return row
 
     async def get_user_achievements(self, user_id: UUID) -> list[dict]:
         stmt = (

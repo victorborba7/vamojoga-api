@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Text
+from sqlalchemy import Column, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -14,7 +14,10 @@ VALID_ACHIEVEMENT_TYPES = ("global", "game")
 
 class Achievement(SQLModel, table=True):
     __tablename__ = "achievements"
-
+    # A conquista é única pela combinação de tipo + jogo + critério + valor
+    __table_args__ = (
+        UniqueConstraint("type", "game_id", "criteria_key", "criteria_value", name="uq_achievement_criteria"),
+    )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str = Field(max_length=200, unique=True)
     description: str | None = Field(default=None, max_length=500)
@@ -30,6 +33,7 @@ class Achievement(SQLModel, table=True):
 
 class UserAchievement(SQLModel, table=True):
     __tablename__ = "user_achievements"
+    __table_args__ = (UniqueConstraint("user_id", "achievement_id", name="uq_user_achievement"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID = Field(foreign_key="users.id", index=True)

@@ -117,15 +117,16 @@ class AchievementService:
                     achievement_id=achievement.id,
                     match_id=match_id,
                 )
-                await self.repo.create_user_achievement(ua)
-                newly_unlocked.append(
-                    NewlyUnlockedAchievement(
-                        id=achievement.id,
-                        name=achievement.name,
-                        description=achievement.description,
-                        icon_url=achievement.icon_url,
-                        points=achievement.points,
+                inserted = await self.repo.create_user_achievement(ua)
+                if inserted is not None:
+                    newly_unlocked.append(
+                        NewlyUnlockedAchievement(
+                            id=achievement.id,
+                            name=achievement.name,
+                            description=achievement.description,
+                            icon_url=achievement.icon_url,
+                            points=achievement.points,
+                        )
                     )
-                )
 
         return newly_unlocked
