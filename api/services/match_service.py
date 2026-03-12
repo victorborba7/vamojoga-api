@@ -14,6 +14,7 @@ from api.repositories.scoring_template_repository import ScoringTemplateReposito
 from api.repositories.user_repository import UserRepository
 from api.schemas.match import MatchCreate, MatchPlayerResponse, MatchResponse
 from api.schemas.scoring_template import MatchTemplateScoreResponse
+from api.services.achievement_service import AchievementService
 
 
 class MatchService:
@@ -23,6 +24,7 @@ class MatchService:
         self.game_repo = GameRepository(session)
         self.user_repo = UserRepository(session)
         self.template_repo = ScoringTemplateRepository(session)
+        self.achievement_service = AchievementService(session)
 
     async def create_match(
         self, data: MatchCreate, current_user: User
@@ -73,6 +75,11 @@ class MatchService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Template de pontuação está inativo",
                 )
+            if template.match_mode != data.match_mode:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Modo da partida '{data.match_mode}' não é compatível com o template (esperado: '{template.match_mode}')",
+                )
             template_name = template.name
 
         # Criar partida
@@ -115,6 +122,16 @@ class MatchService:
                 ]
                 await self.template_repo.create_match_template_scores(scores)
 
+        # Auto-award achievements for all players in the match
+        all_unlocked = []
+        for p_data in data.players:
+            unlocked = await self.achievement_service.check_and_award(
+                user_id=p_data.user_id,
+                match_id=created_match.id,
+                game_id=data.game_id,
+            )
+            all_unlocked.extend(unlocked)
+
         return MatchResponse(
             id=created_match.id,
             game_id=created_match.game_id,
@@ -136,6 +153,7 @@ class MatchService:
                 )
                 for mp in created_players
             ],
+            unlocked_achievements=all_unlocked,
         )
 
     async def get_match(self, match_id: UUID) -> MatchResponse:

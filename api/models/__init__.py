@@ -11,6 +11,8 @@ from api.models.category import Category, GameCategory
 from api.models.designer import Designer, GameDesigner
 from api.models.publisher import Publisher, GamePublisher
 from api.models.scoring_template import ScoringTemplate, ScoringTemplateField, MatchTemplateScore
+from api.models.achievement import Achievement, UserAchievement
+from api.models.game_price import PriceSource, GamePrice
 
 __all__ = [
     "User", "Game", "Match", "MatchPlayer", "Friendship",
@@ -18,4 +20,6 @@ __all__ = [
     "Mechanic", "Category", "Designer", "Publisher",
     "GameMechanic", "GameCategory", "GameDesigner", "GamePublisher",
     "ScoringTemplate", "ScoringTemplateField", "MatchTemplateScore",
+    "Achievement", "UserAchievement",
+    "PriceSource", "GamePrice",
 ]

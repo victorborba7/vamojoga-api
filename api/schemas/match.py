@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from api.schemas.scoring_template import MatchTemplateScoreResponse, TemplateScoreEntry
+from api.schemas.achievement import NewlyUnlockedAchievement
 
 
 # --- Request ---
@@ -20,6 +21,7 @@ class MatchCreate(BaseModel):
     played_at: datetime | None = None
     notes: str | None = None
     scoring_template_id: UUID | None = None
+    match_mode: str = "individual"
     players: list[MatchPlayerCreate] = Field(min_length=1)
 
 
@@ -47,6 +49,7 @@ class MatchResponse(BaseModel):
     scoring_template_id: UUID | None = None
     scoring_template_name: str | None = None
     players: list[MatchPlayerResponse] = []
+    unlocked_achievements: list[NewlyUnlockedAchievement] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -24,6 +24,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: str | None
     is_active: bool
+    email_verified: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -32,3 +33,17 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6, max_length=100)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+

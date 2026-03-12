@@ -15,6 +15,8 @@ from api.routers.library_router import router as library_router
 from api.routers.wishlist_router import router as wishlist_router
 from api.routers.collection_router import router as collection_router
 from api.routers.scoring_template_router import router as scoring_template_router
+from api.routers.achievement_router import router as achievement_router
+from api.routers.price_router import router as price_router
 
 
 @asynccontextmanager
@@ -47,6 +49,8 @@ app.include_router(library_router, prefix="/api/v1")
 app.include_router(wishlist_router, prefix="/api/v1")
 app.include_router(collection_router, prefix="/api/v1")
 app.include_router(scoring_template_router, prefix="/api/v1")
+app.include_router(achievement_router, prefix="/api/v1")
+app.include_router(price_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])

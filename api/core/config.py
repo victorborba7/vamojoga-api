@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
 
+    # SMTP (Zoho Mail)
+    SMTP_HOST: str = "smtppro.zoho.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "VamoJoga"
+
+    # Frontend URL for reset links
+    FRONTEND_URL: str = "http://localhost:3000"
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

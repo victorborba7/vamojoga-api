@@ -13,7 +13,9 @@ from api.repositories.game_repository import GameRepository
 from api.repositories.scoring_template_repository import ScoringTemplateRepository
 from api.schemas.scoring_template import (
     VALID_FIELD_TYPES,
+    VALID_MATCH_MODES,
     ScoringTemplateCreate,
+    ScoringTemplateFieldCreate,
     ScoringTemplateFieldResponse,
     ScoringTemplateListResponse,
     ScoringTemplateResponse,
@@ -50,12 +52,20 @@ class ScoringTemplateService:
                     detail=f"Campo '{f.name}': min_value não pode ser maior que max_value",
                 )
 
+        # Validate match_mode
+        if data.match_mode not in VALID_MATCH_MODES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Modo de partida inválido: '{data.match_mode}'. Use: {', '.join(VALID_MATCH_MODES)}",
+            )
+
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         template = ScoringTemplate(
             game_id=data.game_id,
             created_by=current_user.id,
             name=data.name,
             description=data.description,
+            match_mode=data.match_mode,
             created_at=now,
             updated_at=now,
         )
@@ -177,11 +187,52 @@ class ScoringTemplateService:
             template.name = data.name
         if data.description is not None:
             template.description = data.description
+        if data.match_mode is not None:
+            if data.match_mode not in VALID_MATCH_MODES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Modo de partida inválido: '{data.match_mode}'. Use: {', '.join(VALID_MATCH_MODES)}",
+                )
+            template.match_mode = data.match_mode
         if data.is_active is not None:
             template.is_active = data.is_active
         template.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         await self.repo.update_template(template)
+
+        if data.fields is not None:
+            if len(data.fields) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="O template precisa ter pelo menos um campo",
+                )
+            for f in data.fields:
+                if f.field_type not in VALID_FIELD_TYPES:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Tipo de campo inválido: '{f.field_type}'. Use: {', '.join(VALID_FIELD_TYPES)}",
+                    )
+                if f.min_value is not None and f.max_value is not None and f.min_value > f.max_value:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Campo '{f.name}': min_value não pode ser maior que max_value",
+                    )
+            await self.repo.delete_fields_by_template(template_id)
+            new_fields = [
+                ScoringTemplateField(
+                    template_id=template_id,
+                    name=f.name,
+                    field_type=f.field_type,
+                    min_value=f.min_value,
+                    max_value=f.max_value,
+                    display_order=f.display_order,
+                    is_required=f.is_required,
+                    is_tiebreaker=f.is_tiebreaker,
+                )
+                for f in data.fields
+            ]
+            await self.repo.create_fields(new_fields)
+
         return await self.get_template(template_id)
 
     async def delete_template(
