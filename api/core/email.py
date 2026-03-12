@@ -1,26 +1,23 @@
 import logging
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+
+import resend
 
 from api.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+resend.api_key = settings.RESEND_API_KEY
+
 
 def send_email(to: str, subject: str, html_body: str) -> None:
-    """Send an email via Zoho SMTP (TLS on port 587)."""
-    msg = MIMEMultipart("alternative")
-    msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-
+    """Send an email via Resend API."""
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_FROM_EMAIL, to, msg.as_string())
+        resend.Emails.send({
+            "from": settings.EMAIL_FROM,
+            "to": [to],
+            "subject": subject,
+            "html": html_body,
+        })
         logger.info("Email sent to %s", to)
     except Exception:
         logger.exception("Failed to send email to %s", to)

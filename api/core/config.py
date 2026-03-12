@@ -18,13 +18,9 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
 
-    # SMTP (Zoho Mail)
-    SMTP_HOST: str = "smtppro.zoho.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM_EMAIL: str = ""
-    SMTP_FROM_NAME: str = "VamoJoga"
+    # Resend
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM: str = "VamoJoga <noreply@vamojoga.com.br>"
 
     # Frontend URL for reset links
     FRONTEND_URL: str = "http://localhost:3000"
