@@ -62,37 +62,34 @@ class CollectionService:
         )
 
     async def _build_detail(self, collection: Collection) -> CollectionDetailResponse:
-        membros_db = await self.repo.get_membros(collection.id)
-        jogos_db = await self.repo.get_jogos(collection.id)
+        membros_rows = await self.repo.get_membros_with_users(collection.id)
+        jogos_rows = await self.repo.get_jogos_with_details(collection.id)
 
-        membros = []
-        for m in membros_db:
-            user = await self.user_repo.get_by_id(m.user_id)
-            if user:
-                membros.append(MembroResponse(
-                    user_id=m.user_id,
-                    username=user.username,
-                    full_name=user.full_name,
-                    role=m.role,
-                    joined_at=m.joined_at,
-                ))
+        membros = [
+            MembroResponse(
+                user_id=m.user_id,
+                username=user.username,
+                full_name=user.full_name,
+                role=m.role,
+                joined_at=m.joined_at,
+            )
+            for m, user in membros_rows
+        ]
 
-        jogos = []
-        for j in jogos_db:
-            game = await self.game_repo.get_by_id(j.game_id)
-            adder = await self.user_repo.get_by_id(j.added_by)
-            if game:
-                jogos.append(CollectionJogoResponse(
-                    game_id=game.id,
-                    name=game.name,
-                    bgg_id=game.bgg_id,
-                    image_url=getattr(game, "image_url", None),
-                    bayes_rating=getattr(game, "bayes_rating", None),
-                    year=getattr(game, "year", None),
-                    added_by=j.added_by,
-                    added_by_username=adder.username if adder else None,
-                    added_at=j.added_at,
-                ))
+        jogos = [
+            CollectionJogoResponse(
+                game_id=game.id,
+                name=game.name,
+                bgg_id=game.bgg_id,
+                image_url=getattr(game, "image_url", None),
+                bayes_rating=getattr(game, "bayes_rating", None),
+                year=getattr(game, "year", None),
+                added_by=j.added_by,
+                added_by_username=adder_username,
+                added_at=j.added_at,
+            )
+            for j, game, adder_username in jogos_rows
+        ]
 
         return CollectionDetailResponse(
             id=collection.id,
@@ -132,7 +129,22 @@ class CollectionService:
 
     async def listar_meus(self, current_user: User) -> list[CollectionResponse]:
         collections = await self.repo.get_collections_do_usuario(current_user.id)
-        return [await self._build_response(a) for a in collections]
+        if not collections:
+            return []
+
+        counts = await self.repo.batch_counts([c.id for c in collections])
+        return [
+            CollectionResponse(
+                id=c.id,
+                name=c.name,
+                description=c.description,
+                owner_id=c.owner_id,
+                created_at=c.created_at,
+                member_count=counts.get(c.id, (0, 0))[0],
+                game_count=counts.get(c.id, (0, 0))[1],
+            )
+            for c in collections
+        ]
 
     async def detalhe(self, collection_id: UUID, current_user: User) -> CollectionDetailResponse:
         collection = await self.repo.get_by_id(collection_id)
@@ -165,10 +177,8 @@ class CollectionService:
         await self._assert_owner(collection, current_user.id)
 
         # Remove membros e jogos primeiro (sem FK cascade)
-        for m in await self.repo.get_membros(collection_id):
-            await self.repo.remove_membro(m)
-        for j in await self.repo.get_jogos(collection_id):
-            await self.repo.remove_jogo(j)
+        await self.repo.bulk_delete_membros(collection_id)
+        await self.repo.bulk_delete_jogos(collection_id)
 
         await self.repo.delete(collection)
         await self._session.commit()
@@ -287,30 +297,33 @@ class CollectionService:
             j.game_id for j in await self.repo.get_jogos(collection_id)
         }
 
-        # percorre biblioteca de cada membro
+        # Busca membros e seus dados em batch
         membros = await self.repo.get_membros(collection_id)
+        member_ids = [m.user_id for m in membros]
+        users = await self.user_repo.get_by_ids(member_ids)
+        user_map = {u.id: u for u in users}
+
+        # Busca bibliotecas de todos os membros com jogos em batch
         seen: set[UUID] = set()
         result: list[CollectionJogoResponse] = []
         for membro in membros:
-            entries = await self.library_repo.get_by_user(membro.user_id)
-            user = await self.user_repo.get_by_id(membro.user_id)
-            for entry in entries:
+            entries = await self.library_repo.get_by_user_with_games(membro.user_id)
+            user = user_map.get(membro.user_id)
+            for entry, game in entries:
                 if entry.game_id in ja_na_collection or entry.game_id in seen:
                     continue
                 seen.add(entry.game_id)
-                game = await self.game_repo.get_by_id(entry.game_id)
-                if game:
-                    result.append(CollectionJogoResponse(
-                        game_id=game.id,
-                        name=game.name,
-                        bgg_id=game.bgg_id,
-                        image_url=getattr(game, "image_url", None),
-                        bayes_rating=getattr(game, "bayes_rating", None),
-                        year=getattr(game, "year", None),
-                        added_by=membro.user_id,
-                        added_by_username=user.username if user else None,
-                        added_at=entry.created_at,
-                    ))
+                result.append(CollectionJogoResponse(
+                    game_id=game.id,
+                    name=game.name,
+                    bgg_id=game.bgg_id,
+                    image_url=getattr(game, "image_url", None),
+                    bayes_rating=getattr(game, "bayes_rating", None),
+                    year=getattr(game, "year", None),
+                    added_by=membro.user_id,
+                    added_by_username=user.username if user else None,
+                    added_at=entry.created_at,
+                ))
 
         result.sort(key=lambda g: g.name)
         return result
@@ -318,6 +331,7 @@ class CollectionService:
     async def remover_jogo(
         self, collection_id: UUID, game_id: UUID, current_user: User
     ) -> None:
+        collection = await self.repo.get_by_id(collection_id)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection não encontrado")
         await self._assert_membro(collection_id, current_user.id)

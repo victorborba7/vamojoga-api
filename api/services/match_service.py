@@ -53,13 +53,14 @@ class MatchService:
                 detail="Jogadores duplicados na partida",
             )
 
-        for user_id in user_ids:
-            user = await self.user_repo.get_by_id(user_id)
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Usuário {user_id} não encontrado",
-                )
+        found_users = await self.user_repo.get_by_ids(user_ids)
+        if len(found_users) != len(user_ids):
+            found_ids = {u.id for u in found_users}
+            missing = [uid for uid in user_ids if uid not in found_ids]
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Usuário {missing[0]} não encontrado",
+            )
 
         # Validar template se fornecido
         template_name = None
@@ -169,11 +170,17 @@ class MatchService:
         players = await self.match_repo.get_match_players_with_username(match_id)
 
         player_responses = []
+        if match_data.get("scoring_template_id"):
+            player_ids = [p["id"] for p in players]
+            all_scores = await self.template_repo.batch_get_template_scores(player_ids)
+        else:
+            all_scores = {}
+
         for p in players:
-            ts_list = []
-            if match_data.get("scoring_template_id"):
-                raw_scores = await self.template_repo.get_match_player_template_scores(p["id"])
-                ts_list = [MatchTemplateScoreResponse(**ts) for ts in raw_scores]
+            ts_list = [
+                MatchTemplateScoreResponse(**ts)
+                for ts in all_scores.get(p["id"], [])
+            ]
             player_responses.append(
                 MatchPlayerResponse(
                     id=p["id"],

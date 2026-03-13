@@ -26,25 +26,53 @@ class WishlistService:
         self.friendship_repo = FriendshipRepository(session)
         self.user_repo = UserRepository(session)
 
+    async def _get_friend_ids(self, user_id: UUID) -> list[UUID]:
+        friendships = await self.friendship_repo.get_friends(user_id)
+        return [
+            f.addressee_id if f.requester_id == user_id else f.requester_id
+            for f in friendships
+        ]
+
     async def _friends_who_own(
         self, current_user: User, game_id: UUID
     ) -> list[str]:
         """Retorna usernames de amigos do usuário que possuem o jogo."""
-        friendships = await self.friendship_repo.get_friends(current_user.id)
-        friend_ids = [
-            f.addressee_id if f.requester_id == current_user.id else f.requester_id
-            for f in friendships
-        ]
+        friend_ids = await self._get_friend_ids(current_user.id)
         if not friend_ids:
             return []
 
         owner_ids = await self.library_repo.get_owners_of_game(game_id, friend_ids)
-        usernames: list[str] = []
-        for uid in owner_ids:
-            user = await self.user_repo.get_by_id(uid)
-            if user:
-                usernames.append(user.username)
-        return usernames
+        if not owner_ids:
+            return []
+        users = await self.user_repo.get_by_ids(owner_ids)
+        return [u.username for u in users]
+
+    async def _batch_friends_who_own(
+        self, user_id: UUID, game_ids: list[UUID]
+    ) -> dict[UUID, list[str]]:
+        """Retorna mapa game_id -> [usernames de amigos que possuem] em batch."""
+        friend_ids = await self._get_friend_ids(user_id)
+        if not friend_ids or not game_ids:
+            return {gid: [] for gid in game_ids}
+
+        # Busca todos os owners de uma vez para todos os jogos
+        all_owner_ids: set[UUID] = set()
+        game_owners: dict[UUID, list[UUID]] = {}
+        for gid in game_ids:
+            owners = await self.library_repo.get_owners_of_game(gid, friend_ids)
+            game_owners[gid] = owners
+            all_owner_ids.update(owners)
+
+        # Busca todos os users em 1 query
+        users_map: dict[UUID, str] = {}
+        if all_owner_ids:
+            users = await self.user_repo.get_by_ids(list(all_owner_ids))
+            users_map = {u.id: u.username for u in users}
+
+        return {
+            gid: [users_map[uid] for uid in owners if uid in users_map]
+            for gid, owners in game_owners.items()
+        }
 
     async def add_game(
         self, user: User, game_id: UUID, is_public: bool = True
@@ -84,23 +112,23 @@ class WishlistService:
         await self.wishlist_repo.remove(entry)
 
     async def get_my_wishlist(self, user: User) -> list[WishlistEntryResponse]:
-        entries = await self.wishlist_repo.get_by_user(user.id)
-        result = []
-        for entry in entries:
-            game = await self.game_repo.get_by_id(entry.game_id)
-            if not game:
-                continue
-            friends_who_own = await self._friends_who_own(user, game.id)
-            result.append(
-                WishlistEntryResponse(
-                    id=entry.id,
-                    game=_game_to_response(game),
-                    is_public=entry.is_public,
-                    added_at=entry.created_at,
-                    friends_who_own=friends_who_own,
-                )
+        rows = await self.wishlist_repo.get_by_user_with_games(user.id)
+        if not rows:
+            return []
+
+        game_ids = [game.id for _, game in rows]
+        friends_map = await self._batch_friends_who_own(user.id, game_ids)
+
+        return [
+            WishlistEntryResponse(
+                id=entry.id,
+                game=_game_to_response(game),
+                is_public=entry.is_public,
+                added_at=entry.created_at,
+                friends_who_own=friends_map.get(game.id, []),
             )
-        return result
+            for entry, game in rows
+        ]
 
     async def get_user_wishlist(
         self, requesting_user: User, owner_id: UUID
@@ -109,27 +137,28 @@ class WishlistService:
         Retorna a wishlist de outro usuário.
         Só exibe itens públicos, a menos que o solicitante seja o dono.
         """
-        entries = (
-            await self.wishlist_repo.get_by_user(owner_id)
-            if requesting_user.id == owner_id
-            else await self.wishlist_repo.get_public_by_user(owner_id)
+        public_only = requesting_user.id != owner_id
+        rows = await self.wishlist_repo.get_by_user_with_games(
+            owner_id, public_only=public_only
         )
-        result = []
-        for entry in entries:
-            game = await self.game_repo.get_by_id(entry.game_id)
-            if not game:
-                continue
-            friends_who_own = await self._friends_who_own(requesting_user, game.id)
-            result.append(
-                WishlistEntryResponse(
-                    id=entry.id,
-                    game=_game_to_response(game),
-                    is_public=entry.is_public,
-                    added_at=entry.created_at,
-                    friends_who_own=friends_who_own,
-                )
+        if not rows:
+            return []
+
+        game_ids = [game.id for _, game in rows]
+        friends_map = await self._batch_friends_who_own(
+            requesting_user.id, game_ids
+        )
+
+        return [
+            WishlistEntryResponse(
+                id=entry.id,
+                game=_game_to_response(game),
+                is_public=entry.is_public,
+                added_at=entry.created_at,
+                friends_who_own=friends_map.get(game.id, []),
             )
-        return result
+            for entry, game in rows
+        ]
 
     async def update_visibility(
         self, user: User, game_id: UUID, data: WishlistVisibilityUpdate

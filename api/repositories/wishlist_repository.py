@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.models.game import Game
 from api.models.user_wishlist import UserWishlist
 
 
@@ -46,6 +47,21 @@ class WishlistRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_by_user_with_games(
+        self, user_id: UUID, public_only: bool = False
+    ) -> list[tuple[UserWishlist, Game]]:
+        """Retorna wishlist com jogos já carregados (1 query)."""
+        stmt = (
+            select(UserWishlist, Game)
+            .join(Game, Game.id == UserWishlist.game_id)
+            .where(UserWishlist.user_id == user_id)
+            .order_by(UserWishlist.created_at.desc())
+        )
+        if public_only:
+            stmt = stmt.where(UserWishlist.is_public.is_(True))
+        result = await self.session.execute(stmt)
+        return list(result.tuples().all())
 
     async def get_public_by_user(self, user_id: UUID) -> list[UserWishlist]:
         """Wishlist pública de outro usuário (para compartilhamento)."""

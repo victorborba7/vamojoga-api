@@ -1,10 +1,12 @@
 import uuid
 from uuid import UUID
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.collection import Collection, CollectionMembro, CollectionJogo
+from api.models.collection import Collection, CollectionJogo, CollectionMembro
+from api.models.game import Game
+from api.models.user import User
 
 
 class CollectionRepository:
@@ -46,6 +48,29 @@ class CollectionRepository:
             select(CollectionMembro).where(CollectionMembro.collection_id == collection_id)
         )
         return list(result.scalars().all())
+
+    async def get_membros_with_users(
+        self, collection_id: UUID
+    ) -> list[tuple[CollectionMembro, User]]:
+        """Retorna membros com usuários já carregados (1 query)."""
+        result = await self.session.execute(
+            select(CollectionMembro, User)
+            .join(User, User.id == CollectionMembro.user_id)
+            .where(CollectionMembro.collection_id == collection_id)
+        )
+        return list(result.tuples().all())
+
+    async def get_jogos_with_details(
+        self, collection_id: UUID
+    ) -> list[tuple[CollectionJogo, Game, str | None]]:
+        """Retorna jogos com Game + username de quem adicionou (1 query)."""
+        result = await self.session.execute(
+            select(CollectionJogo, Game, User.username)
+            .join(Game, Game.id == CollectionJogo.game_id)
+            .outerjoin(User, User.id == CollectionJogo.added_by)
+            .where(CollectionJogo.collection_id == collection_id)
+        )
+        return list(result.tuples().all())
 
     async def get_membro(self, collection_id: UUID, user_id: UUID) -> CollectionMembro | None:
         result = await self.session.execute(
@@ -111,12 +136,52 @@ class CollectionRepository:
 
     async def count_membros(self, collection_id: UUID) -> int:
         result = await self.session.execute(
-            select(CollectionMembro).where(CollectionMembro.collection_id == collection_id)
+            select(func.count()).select_from(CollectionMembro)
+            .where(CollectionMembro.collection_id == collection_id)
         )
-        return len(result.scalars().all())
+        return result.scalar_one() or 0
 
     async def count_jogos(self, collection_id: UUID) -> int:
         result = await self.session.execute(
-            select(CollectionJogo).where(CollectionJogo.collection_id == collection_id)
+            select(func.count()).select_from(CollectionJogo)
+            .where(CollectionJogo.collection_id == collection_id)
         )
-        return len(result.scalars().all())
+        return result.scalar_one() or 0
+
+    async def batch_counts(
+        self, collection_ids: list[UUID]
+    ) -> dict[UUID, tuple[int, int]]:
+        """Retorna {collection_id: (member_count, game_count)} em 2 queries."""
+        if not collection_ids:
+            return {}
+
+        m_result = await self.session.execute(
+            select(CollectionMembro.collection_id, func.count())
+            .where(CollectionMembro.collection_id.in_(collection_ids))
+            .group_by(CollectionMembro.collection_id)
+        )
+        member_counts = dict(m_result.all())
+
+        g_result = await self.session.execute(
+            select(CollectionJogo.collection_id, func.count())
+            .where(CollectionJogo.collection_id.in_(collection_ids))
+            .group_by(CollectionJogo.collection_id)
+        )
+        game_counts = dict(g_result.all())
+
+        return {
+            cid: (member_counts.get(cid, 0), game_counts.get(cid, 0))
+            for cid in collection_ids
+        }
+
+    async def bulk_delete_membros(self, collection_id: UUID) -> None:
+        await self.session.execute(
+            delete(CollectionMembro)
+            .where(CollectionMembro.collection_id == collection_id)
+        )
+
+    async def bulk_delete_jogos(self, collection_id: UUID) -> None:
+        await self.session.execute(
+            delete(CollectionJogo)
+            .where(CollectionJogo.collection_id == collection_id)
+        )

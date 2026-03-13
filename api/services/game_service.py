@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -40,10 +41,16 @@ class GameService:
                 detail="Jogo não encontrado",
             )
         response = GameResponse.model_validate(game)
-        response.mechanics  = await self.entity_repository.get_mechanics(game.id)
-        response.categories = await self.entity_repository.get_categories(game.id)
-        response.designers  = await self.entity_repository.get_designers(game.id)
-        response.publishers = await self.entity_repository.get_publishers(game.id)
+        mechanics, categories, designers, publishers = await asyncio.gather(
+            self.entity_repository.get_mechanics(game.id),
+            self.entity_repository.get_categories(game.id),
+            self.entity_repository.get_designers(game.id),
+            self.entity_repository.get_publishers(game.id),
+        )
+        response.mechanics = mechanics
+        response.categories = categories
+        response.designers = designers
+        response.publishers = publishers
         return response
 
     async def list_games(self, skip: int = 0, limit: int = 100) -> list[GameResponse]:

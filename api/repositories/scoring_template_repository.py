@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.game import Game
@@ -27,8 +27,7 @@ class ScoringTemplateRepository:
     async def create_fields(
         self, fields: list[ScoringTemplateField]
     ) -> list[ScoringTemplateField]:
-        for field in fields:
-            self.session.add(field)
+        self.session.add_all(fields)
         await self.session.commit()
         for field in fields:
             await self.session.refresh(field)
@@ -200,12 +199,10 @@ class ScoringTemplateRepository:
         return template
 
     async def delete_fields_by_template(self, template_id: UUID) -> None:
-        stmt = select(ScoringTemplateField).where(
-            ScoringTemplateField.template_id == template_id
+        await self.session.execute(
+            delete(ScoringTemplateField)
+            .where(ScoringTemplateField.template_id == template_id)
         )
-        result = await self.session.execute(stmt)
-        for field in result.scalars().all():
-            await self.session.delete(field)
         await self.session.commit()
 
     # ---- Match template scores ----
@@ -213,8 +210,7 @@ class ScoringTemplateRepository:
     async def create_match_template_scores(
         self, scores: list[MatchTemplateScore]
     ) -> list[MatchTemplateScore]:
-        for score in scores:
-            self.session.add(score)
+        self.session.add_all(scores)
         await self.session.commit()
         for score in scores:
             await self.session.refresh(score)
@@ -251,3 +247,43 @@ class ScoringTemplateRepository:
             }
             for row in result.all()
         ]
+
+    async def batch_get_template_scores(
+        self, match_player_ids: list[UUID]
+    ) -> dict[UUID, list[dict]]:
+        """Busca scores de template para vários jogadores de uma vez."""
+        if not match_player_ids:
+            return {}
+        stmt = (
+            select(
+                MatchTemplateScore.match_player_id,
+                MatchTemplateScore.template_field_id,
+                ScoringTemplateField.name.label("field_name"),
+                ScoringTemplateField.field_type,
+                MatchTemplateScore.numeric_value,
+                MatchTemplateScore.boolean_value,
+                MatchTemplateScore.ranking_value,
+            )
+            .join(
+                ScoringTemplateField,
+                ScoringTemplateField.id == MatchTemplateScore.template_field_id,
+            )
+            .where(MatchTemplateScore.match_player_id.in_(match_player_ids))
+            .order_by(
+                MatchTemplateScore.match_player_id,
+                ScoringTemplateField.display_order,
+            )
+        )
+        result = await self.session.execute(stmt)
+
+        scores_map: dict[UUID, list[dict]] = {pid: [] for pid in match_player_ids}
+        for row in result.all():
+            scores_map[row.match_player_id].append({
+                "template_field_id": row.template_field_id,
+                "field_name": row.field_name,
+                "field_type": row.field_type,
+                "numeric_value": row.numeric_value,
+                "boolean_value": row.boolean_value,
+                "ranking_value": row.ranking_value,
+            })
+        return scores_map
