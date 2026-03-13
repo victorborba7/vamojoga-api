@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # Frontend URL for reset links
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Web Push (VAPID)
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_CLAIMS_EMAIL: str = "mailto:contato@vamojoga.com.br"
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

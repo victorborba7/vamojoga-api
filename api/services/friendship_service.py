@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -8,12 +9,14 @@ from api.models.user import User
 from api.repositories.friendship_repository import FriendshipRepository
 from api.repositories.user_repository import UserRepository
 from api.schemas.friendship import FriendResponse, FriendshipResponse
+from api.services.push_service import PushService
 
 
 class FriendshipService:
     def __init__(self, session: AsyncSession) -> None:
         self.friendship_repo = FriendshipRepository(session)
         self.user_repo = UserRepository(session)
+        self.push_service = PushService(session)
 
     async def send_request(
         self, requester: User, addressee_id: UUID
@@ -57,6 +60,17 @@ class FriendshipService:
             addressee_id=addressee_id,
         )
         created = await self.friendship_repo.create(friendship)
+
+        # Push notification to addressee (fire-and-forget)
+        asyncio.create_task(
+            self.push_service.send_to_user(
+                addressee_id,
+                "Nova solicitação de amizade",
+                f"{requester.username} quer ser seu amigo no VamoJogá!",
+                "/social",
+            )
+        )
+
         return FriendshipResponse(
             id=created.id,
             requester_id=created.requester_id,

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from api.models.match import Match
 from api.models.match_player import MatchPlayer
 from api.models.scoring_template import MatchTemplateScore
 from api.models.user import User
+from api.repositories.friendship_repository import FriendshipRepository
 from api.repositories.game_repository import GameRepository
 from api.repositories.match_repository import MatchRepository
 from api.repositories.scoring_template_repository import ScoringTemplateRepository
@@ -15,6 +17,7 @@ from api.repositories.user_repository import UserRepository
 from api.schemas.match import MatchCreate, MatchPlayerResponse, MatchResponse
 from api.schemas.scoring_template import MatchTemplateScoreResponse
 from api.services.achievement_service import AchievementService
+from api.services.push_service import PushService
 
 
 class MatchService:
@@ -25,6 +28,8 @@ class MatchService:
         self.user_repo = UserRepository(session)
         self.template_repo = ScoringTemplateRepository(session)
         self.achievement_service = AchievementService(session)
+        self.push_service = PushService(session)
+        self.friendship_repo = FriendshipRepository(session)
 
     async def create_match(
         self, data: MatchCreate, current_user: User
@@ -133,6 +138,36 @@ class MatchService:
                 game_id=data.game_id,
             )
             all_unlocked.extend(unlocked)
+            # Push for each unlocked achievement
+            for achievement in unlocked:
+                asyncio.create_task(
+                    self.push_service.send_to_user(
+                        p_data.user_id,
+                        "Conquista desbloqueada! 🏆",
+                        achievement.name,
+                        "/achievements",
+                    )
+                )
+
+        # Notify friends of the match creator
+        async def _notify_friends() -> None:
+            try:
+                friendships = await self.friendship_repo.get_friends(current_user.id)
+                friend_ids = [
+                    f.addressee_id if f.requester_id == current_user.id else f.requester_id
+                    for f in friendships
+                ]
+                for friend_id in friend_ids:
+                    await self.push_service.send_to_user(
+                        friend_id,
+                        f"{current_user.username} registrou uma partida",
+                        f"{game.name} • {len(data.players)} jogadores",
+                        "/matches",
+                    )
+            except Exception:
+                pass
+
+        asyncio.create_task(_notify_friends())
 
         return MatchResponse(
             id=created_match.id,
