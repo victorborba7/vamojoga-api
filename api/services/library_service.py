@@ -54,43 +54,31 @@ class LibraryService:
             )
         await self.library_repo.remove(entry)
 
+    async def _build_library(
+        self, user_id: UUID
+    ) -> list[LibraryEntryResponse]:
+        rows = await self.library_repo.get_by_user_with_games(user_id)
+        if not rows:
+            return []
+
+        game_ids = [game.id for _, game in rows]
+        match_counts = await self.library_repo.batch_count_matches(
+            user_id, game_ids
+        )
+
+        return [
+            LibraryEntryResponse(
+                id=entry.id,
+                game=_game_to_response(game),
+                match_count=match_counts.get(game.id, 0),
+                added_at=entry.created_at,
+            )
+            for entry, game in rows
+        ]
+
     async def get_my_library(self, user: User) -> list[LibraryEntryResponse]:
-        entries = await self.library_repo.get_by_user(user.id)
-        result = []
-        for entry in entries:
-            game = await self.game_repo.get_by_id(entry.game_id)
-            if not game:
-                continue
-            match_count = await self.library_repo.count_matches_for_game(
-                user.id, game.id
-            )
-            result.append(
-                LibraryEntryResponse(
-                    id=entry.id,
-                    game=_game_to_response(game),
-                    match_count=match_count,
-                    added_at=entry.created_at,
-                )
-            )
-        return result
+        return await self._build_library(user.id)
 
     async def get_user_library(self, owner_id: UUID) -> list[LibraryEntryResponse]:
         """Retorna a biblioteca pública de qualquer usuário."""
-        entries = await self.library_repo.get_by_user(owner_id)
-        result = []
-        for entry in entries:
-            game = await self.game_repo.get_by_id(entry.game_id)
-            if not game:
-                continue
-            match_count = await self.library_repo.count_matches_for_game(
-                owner_id, game.id
-            )
-            result.append(
-                LibraryEntryResponse(
-                    id=entry.id,
-                    game=_game_to_response(game),
-                    match_count=match_count,
-                    added_at=entry.created_at,
-                )
-            )
-        return result
+        return await self._build_library(owner_id)

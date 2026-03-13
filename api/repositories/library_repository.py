@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.models.game import Game
 from api.models.match import Match
 from api.models.match_player import MatchPlayer
 from api.models.user_game_library import UserGameLibrary
@@ -42,6 +43,19 @@ class LibraryRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_by_user_with_games(
+        self, user_id: UUID
+    ) -> list[tuple[UserGameLibrary, Game]]:
+        """Retorna entradas da biblioteca com o jogo já carregado (1 query)."""
+        stmt = (
+            select(UserGameLibrary, Game)
+            .join(Game, Game.id == UserGameLibrary.game_id)
+            .where(UserGameLibrary.user_id == user_id)
+            .order_by(UserGameLibrary.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.tuples().all())
+
     async def count_matches_for_game(
         self, user_id: UUID, game_id: UUID
     ) -> int:
@@ -57,6 +71,25 @@ class LibraryRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one() or 0
+
+    async def batch_count_matches(
+        self, user_id: UUID, game_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        """Conta partidas de vários jogos de uma vez (1 query)."""
+        if not game_ids:
+            return {}
+        stmt = (
+            select(Match.game_id, func.count())
+            .select_from(MatchPlayer)
+            .join(Match, Match.id == MatchPlayer.match_id)
+            .where(
+                MatchPlayer.user_id == user_id,
+                Match.game_id.in_(game_ids),
+            )
+            .group_by(Match.game_id)
+        )
+        result = await self.session.execute(stmt)
+        return dict(result.all())
 
     async def get_owners_of_game(
         self, game_id: UUID, user_ids: list[UUID]
