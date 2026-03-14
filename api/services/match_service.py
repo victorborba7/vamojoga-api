@@ -248,7 +248,7 @@ class MatchService:
     async def submit_player_scores(
         self, match_id: UUID, target_user_id: UUID,
         data: PlayerScoreSubmit, current_user: User,
-    ) -> MatchPlayerResponse:
+    ) -> MatchResponse:
         match = await self.match_repo.get_match_by_id(match_id)
         if not match:
             raise HTTPException(status_code=404, detail="Partida não encontrada")
@@ -285,26 +285,24 @@ class MatchService:
         match_player.scores_submitted_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await self.match_repo.update_match_player(match_player)
 
-        # Notify the organizer
+        # Check if all players have submitted — auto-finalize
+        all_players = await self.match_repo.get_match_players(match_id)
+        all_submitted = all(p.scores_submitted for p in all_players)
+        if all_submitted:
+            return await self._do_finalize(match, all_players, current_user)
+
+        # Notify the organizer that a player submitted
         if current_user.id != match.created_by:
             asyncio.create_task(
                 self.push_service.send_to_user(
                     match.created_by,
                     f"{current_user.username} registrou sua pontuação",
-                    "Verifique a partida para finalizar",
+                    "Aguardando os demais jogadores",
                     f"/matches/{match_id}",
                 )
             )
 
-        return MatchPlayerResponse(
-            id=match_player.id,
-            user_id=match_player.user_id,
-            position=match_player.position,
-            score=match_player.score,
-            is_winner=match_player.is_winner,
-            scores_submitted=match_player.scores_submitted,
-            scores_submitted_at=match_player.scores_submitted_at,
-        )
+        return await self.get_match(match_id)
 
     async def finalize_match(
         self, match_id: UUID, current_user: User
@@ -317,13 +315,14 @@ class MatchService:
         if match.created_by != current_user.id:
             raise HTTPException(status_code=403, detail="Apenas o organizador pode finalizar a partida")
 
-        game = await self.game_repo.get_by_id(match.game_id)
         players = await self.match_repo.get_match_players(match_id)
+        return await self._do_finalize(match, players, current_user)
+
+    async def _do_finalize(self, match, players, current_user: User) -> MatchResponse:
+        game = await self.game_repo.get_by_id(match.game_id)
         template = None
-        template_name = None
         if match.scoring_template_id:
             template = await self.template_repo.get_template_by_id(match.scoring_template_id)
-            template_name = template.name if template else None
 
         # Calculate scores from template
         if template:
@@ -362,12 +361,30 @@ class MatchService:
         for mp in players:
             await self.match_repo.update_match_player(mp)
 
+        # Notify all players that the match is finalized
+        winner = next((p for p in players if p.is_winner), None)
+        winner_user = None
+        if winner:
+            found = await self.user_repo.get_by_ids([winner.user_id])
+            winner_user = found[0] if found else None
+
+        for mp in players:
+            if mp.user_id != current_user.id:
+                asyncio.create_task(
+                    self.push_service.send_to_user(
+                        mp.user_id,
+                        "Partida finalizada! 🏆",
+                        f"Vencedor: {winner_user.username if winner_user else '?'} — veja o ranking",
+                        f"/matches/{match.id}",
+                    )
+                )
+
         # Award achievements
         all_unlocked = await self._award_achievements_and_notify(
             players, match.id, match.game_id, current_user, game
         )
 
-        return await self.get_match(match_id, unlocked_achievements=all_unlocked)
+        return await self.get_match(match.id, unlocked_achievements=all_unlocked)
 
     async def get_match(self, match_id: UUID, unlocked_achievements=None) -> MatchResponse:
         match_data = await self.match_repo.get_match_with_details(match_id)

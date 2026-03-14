@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.database import get_session
 from api.core.security import get_current_user
 from api.models.user import User
-from api.schemas.match import MatchCreate, MatchPlayerResponse, MatchResponse, PlayerScoreSubmit
+from api.schemas.match import MatchCreate, MatchResponse, PlayerScoreSubmit
 from api.services.match_service import MatchService
 
 router = APIRouter(prefix="/matches", tags=["Matches"])
@@ -44,25 +44,25 @@ async def get_user_matches(
     return await service.get_user_matches(user_id, skip=skip, limit=limit)
 
 
-@router.post("/{match_id}/submit-scores", response_model=MatchPlayerResponse)
+@router.post("/{match_id}/submit-scores", response_model=MatchResponse)
 async def submit_own_scores(
     match_id: UUID,
     data: PlayerScoreSubmit,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> MatchPlayerResponse:
+) -> MatchResponse:
     service = MatchService(session)
     return await service.submit_player_scores(match_id, current_user.id, data, current_user)
 
 
-@router.post("/{match_id}/submit-scores/{user_id}", response_model=MatchPlayerResponse)
+@router.post("/{match_id}/submit-scores/{user_id}", response_model=MatchResponse)
 async def submit_player_scores(
     match_id: UUID,
     user_id: UUID,
     data: PlayerScoreSubmit,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> MatchPlayerResponse:
+) -> MatchResponse:
     service = MatchService(session)
     return await service.submit_player_scores(match_id, user_id, data, current_user)
 
