@@ -17,4 +17,6 @@ class MatchPlayer(SQLModel, table=True):
     position: int = Field(ge=1)
     score: int = Field(default=0)
     is_winner: bool = Field(default=False)
+    scores_submitted: bool = Field(default=False)
+    scores_submitted_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=_utcnow)

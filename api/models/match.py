@@ -18,4 +18,5 @@ class Match(SQLModel, table=True):
     notes: str | None = Field(default=None, max_length=500)
     match_mode: str = Field(default="individual", max_length=50)
     scoring_template_id: uuid.UUID | None = Field(default=None, foreign_key="scoring_templates.id")
+    status: str = Field(default="completed", max_length=20)
     created_at: datetime = Field(default_factory=_utcnow)

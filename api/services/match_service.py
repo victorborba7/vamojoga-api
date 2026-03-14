@@ -14,7 +14,7 @@ from api.repositories.game_repository import GameRepository
 from api.repositories.match_repository import MatchRepository
 from api.repositories.scoring_template_repository import ScoringTemplateRepository
 from api.repositories.user_repository import UserRepository
-from api.schemas.match import MatchCreate, MatchPlayerResponse, MatchResponse
+from api.schemas.match import MatchCreate, MatchPlayerResponse, MatchResponse, PlayerScoreSubmit
 from api.schemas.scoring_template import MatchTemplateScoreResponse
 from api.services.achievement_service import AchievementService
 from api.services.push_service import PushService
@@ -81,12 +81,10 @@ class MatchService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Template de pontuação está inativo",
                 )
-            if template.match_mode != data.match_mode:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Modo da partida '{data.match_mode}' não é compatível com o template (esperado: '{template.match_mode}')",
-                )
             template_name = template.name
+
+        is_collaborative = data.collaborative_scoring and data.scoring_template_id is not None
+        match_status = "pending_scores" if is_collaborative else "completed"
 
         # Criar partida
         played_at = data.played_at or datetime.now(timezone.utc)
@@ -97,6 +95,7 @@ class MatchService:
             notes=data.notes,
             match_mode=data.match_mode,
             scoring_template_id=data.scoring_template_id,
+            status=match_status,
         )
         created_match = await self.match_repo.create_match(match)
 
@@ -105,51 +104,127 @@ class MatchService:
             MatchPlayer(
                 match_id=created_match.id,
                 user_id=p.user_id,
-                position=p.position,
-                score=p.score,
-                is_winner=p.is_winner,
+                position=p.position if not is_collaborative else 0,
+                score=p.score if not is_collaborative else 0,
+                is_winner=p.is_winner if not is_collaborative else False,
+                scores_submitted=not is_collaborative,
             )
             for p in data.players
         ]
         created_players = await self.match_repo.create_match_players(match_players)
 
-        # Criar scores de template se houver
-        player_map = {p.user_id: mp for p, mp in zip(data.players, created_players)}
-        for p_data in data.players:
-            if p_data.template_scores:
-                scores = [
-                    MatchTemplateScore(
-                        match_player_id=player_map[p_data.user_id].id,
-                        template_field_id=ts.template_field_id,
-                        numeric_value=ts.numeric_value,
-                        boolean_value=ts.boolean_value,
-                        ranking_value=ts.ranking_value,
-                    )
-                    for ts in p_data.template_scores
-                ]
-                await self.template_repo.create_match_template_scores(scores)
+        # Criar scores de template se houver (only for non-collaborative)
+        if not is_collaborative:
+            player_map = {p.user_id: mp for p, mp in zip(data.players, created_players)}
+            for p_data in data.players:
+                if p_data.template_scores:
+                    scores = [
+                        MatchTemplateScore(
+                            match_player_id=player_map[p_data.user_id].id,
+                            template_field_id=ts.template_field_id,
+                            numeric_value=ts.numeric_value,
+                            boolean_value=ts.boolean_value,
+                            ranking_value=ts.ranking_value,
+                        )
+                        for ts in p_data.template_scores
+                    ]
+                    await self.template_repo.create_match_template_scores(scores)
 
-        # Auto-award achievements for all players in the match
+        # For collaborative, notify players to submit scores
+        if is_collaborative:
+            for p_data in data.players:
+                if p_data.user_id != current_user.id:
+                    asyncio.create_task(
+                        self.push_service.send_to_user(
+                            p_data.user_id,
+                            f"{current_user.username} registrou uma partida",
+                            f"Registre sua pontuação em {game.name}!",
+                            f"/matches/{created_match.id}",
+                        )
+                    )
+        else:
+            # Auto-award achievements for all players in the match
+            all_unlocked = await self._award_achievements_and_notify(
+                data.players, created_match.id, data.game_id, current_user, game
+            )
+
+            return MatchResponse(
+                id=created_match.id,
+                game_id=created_match.game_id,
+                game_name=game.name,
+                game_image_url=game.image_url,
+                created_by=created_match.created_by,
+                played_at=created_match.played_at,
+                notes=created_match.notes,
+                match_mode=created_match.match_mode,
+                status=created_match.status,
+                scoring_template_id=created_match.scoring_template_id,
+                scoring_template_name=template_name,
+                created_at=created_match.created_at,
+                players=[
+                    MatchPlayerResponse(
+                        id=mp.id,
+                        user_id=mp.user_id,
+                        position=mp.position,
+                        score=mp.score,
+                        is_winner=mp.is_winner,
+                        scores_submitted=mp.scores_submitted,
+                    )
+                    for mp in created_players
+                ],
+                unlocked_achievements=all_unlocked,
+            )
+
+        return MatchResponse(
+            id=created_match.id,
+            game_id=created_match.game_id,
+            game_name=game.name,
+            game_image_url=game.image_url,
+            created_by=created_match.created_by,
+            played_at=created_match.played_at,
+            notes=created_match.notes,
+            match_mode=created_match.match_mode,
+            status=created_match.status,
+            scoring_template_id=created_match.scoring_template_id,
+            scoring_template_name=template_name,
+            created_at=created_match.created_at,
+            players=[
+                MatchPlayerResponse(
+                    id=mp.id,
+                    user_id=mp.user_id,
+                    position=mp.position,
+                    score=mp.score,
+                    is_winner=mp.is_winner,
+                    scores_submitted=mp.scores_submitted,
+                )
+                for mp in created_players
+            ],
+        )
+
+    async def _award_achievements_and_notify(
+        self, players_data, match_id, game_id, current_user, game
+    ):
         all_unlocked = []
-        for p_data in data.players:
+        for p_data in players_data:
+            uid = p_data.user_id if hasattr(p_data, 'user_id') else p_data
             unlocked = await self.achievement_service.check_and_award(
-                user_id=p_data.user_id,
-                match_id=created_match.id,
-                game_id=data.game_id,
+                user_id=uid,
+                match_id=match_id,
+                game_id=game_id,
             )
             all_unlocked.extend(unlocked)
-            # Push for each unlocked achievement
             for achievement in unlocked:
                 asyncio.create_task(
                     self.push_service.send_to_user(
-                        p_data.user_id,
+                        uid,
                         "Conquista desbloqueada! 🏆",
                         achievement.name,
                         "/achievements",
                     )
                 )
 
-        # Notify friends of the match creator
+        num_players = len(players_data)
+
         async def _notify_friends() -> None:
             try:
                 friendships = await self.friendship_repo.get_friends(current_user.id)
@@ -161,40 +236,140 @@ class MatchService:
                     await self.push_service.send_to_user(
                         friend_id,
                         f"{current_user.username} registrou uma partida",
-                        f"{game.name} • {len(data.players)} jogadores",
+                        f"{game.name} • {num_players} jogadores",
                         "/matches",
                     )
             except Exception:
                 pass
 
         asyncio.create_task(_notify_friends())
+        return all_unlocked
 
-        return MatchResponse(
-            id=created_match.id,
-            game_id=created_match.game_id,
-            game_name=game.name,
-            game_image_url=game.image_url,
-            created_by=created_match.created_by,
-            played_at=created_match.played_at,
-            notes=created_match.notes,
-            match_mode=created_match.match_mode,
-            scoring_template_id=created_match.scoring_template_id,
-            scoring_template_name=template_name,
-            created_at=created_match.created_at,
-            players=[
-                MatchPlayerResponse(
-                    id=mp.id,
-                    user_id=mp.user_id,
-                    position=mp.position,
-                    score=mp.score,
-                    is_winner=mp.is_winner,
+    async def submit_player_scores(
+        self, match_id: UUID, target_user_id: UUID,
+        data: PlayerScoreSubmit, current_user: User,
+    ) -> MatchPlayerResponse:
+        match = await self.match_repo.get_match_by_id(match_id)
+        if not match:
+            raise HTTPException(status_code=404, detail="Partida não encontrada")
+        if match.status != "pending_scores":
+            raise HTTPException(status_code=400, detail="Esta partida já foi finalizada")
+
+        # Only the player themselves or the match creator can submit
+        if current_user.id != target_user_id and current_user.id != match.created_by:
+            raise HTTPException(status_code=403, detail="Sem permissão para registrar pontuação deste jogador")
+
+        match_player = await self.match_repo.get_match_player(match_id, target_user_id)
+        if not match_player:
+            raise HTTPException(status_code=404, detail="Jogador não encontrado nesta partida")
+
+        # Delete existing scores if re-submitting
+        await self.match_repo.delete_template_scores_for_player(match_player.id)
+
+        # Save new scores
+        if data.template_scores:
+            scores = [
+                MatchTemplateScore(
+                    match_player_id=match_player.id,
+                    template_field_id=ts.template_field_id,
+                    numeric_value=ts.numeric_value,
+                    boolean_value=ts.boolean_value,
+                    ranking_value=ts.ranking_value,
                 )
-                for mp in created_players
-            ],
-            unlocked_achievements=all_unlocked,
+                for ts in data.template_scores
+            ]
+            await self.template_repo.create_match_template_scores(scores)
+
+        # Mark as submitted
+        match_player.scores_submitted = True
+        match_player.scores_submitted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        await self.match_repo.update_match_player(match_player)
+
+        # Notify the organizer
+        if current_user.id != match.created_by:
+            asyncio.create_task(
+                self.push_service.send_to_user(
+                    match.created_by,
+                    f"{current_user.username} registrou sua pontuação",
+                    "Verifique a partida para finalizar",
+                    f"/matches/{match_id}",
+                )
+            )
+
+        return MatchPlayerResponse(
+            id=match_player.id,
+            user_id=match_player.user_id,
+            position=match_player.position,
+            score=match_player.score,
+            is_winner=match_player.is_winner,
+            scores_submitted=match_player.scores_submitted,
+            scores_submitted_at=match_player.scores_submitted_at,
         )
 
-    async def get_match(self, match_id: UUID) -> MatchResponse:
+    async def finalize_match(
+        self, match_id: UUID, current_user: User
+    ) -> MatchResponse:
+        match = await self.match_repo.get_match_by_id(match_id)
+        if not match:
+            raise HTTPException(status_code=404, detail="Partida não encontrada")
+        if match.status != "pending_scores":
+            raise HTTPException(status_code=400, detail="Esta partida já foi finalizada")
+        if match.created_by != current_user.id:
+            raise HTTPException(status_code=403, detail="Apenas o organizador pode finalizar a partida")
+
+        game = await self.game_repo.get_by_id(match.game_id)
+        players = await self.match_repo.get_match_players(match_id)
+        template = None
+        template_name = None
+        if match.scoring_template_id:
+            template = await self.template_repo.get_template_by_id(match.scoring_template_id)
+            template_name = template.name if template else None
+
+        # Calculate scores from template
+        if template:
+            fields = await self.template_repo.get_template_fields(match.scoring_template_id)
+            player_ids = [p.id for p in players]
+            all_scores = await self.template_repo.batch_get_template_scores(player_ids)
+
+            tiebreaker_field_ids = {str(f.id) for f in fields if f.is_tiebreaker}
+
+            for mp in players:
+                player_scores = all_scores.get(mp.id, [])
+                total = 0
+                for ps in player_scores:
+                    if str(ps["template_field_id"]) in tiebreaker_field_ids:
+                        continue
+                    if ps["field_type"] == "numeric":
+                        total += ps.get("numeric_value", 0) or 0
+                    elif ps["field_type"] == "boolean":
+                        total += 1 if ps.get("boolean_value") else 0
+                mp.score = total
+
+            # Rank by score
+            sorted_players = sorted(players, key=lambda p: p.score, reverse=True)
+            rank = 1
+            for i, mp in enumerate(sorted_players):
+                if i > 0 and mp.score < sorted_players[i - 1].score:
+                    rank = i + 1
+                mp.position = rank
+                mp.is_winner = rank == 1
+
+        # Update match status
+        match.status = "completed"
+        await self.match_repo.update_match(match)
+
+        # Update all players
+        for mp in players:
+            await self.match_repo.update_match_player(mp)
+
+        # Award achievements
+        all_unlocked = await self._award_achievements_and_notify(
+            players, match.id, match.game_id, current_user, game
+        )
+
+        return await self.get_match(match_id, unlocked_achievements=all_unlocked)
+
+    async def get_match(self, match_id: UUID, unlocked_achievements=None) -> MatchResponse:
         match_data = await self.match_repo.get_match_with_details(match_id)
         if not match_data:
             raise HTTPException(
@@ -224,6 +399,8 @@ class MatchService:
                     position=p["position"],
                     score=p["score"],
                     is_winner=p["is_winner"],
+                    scores_submitted=p.get("scores_submitted", False),
+                    scores_submitted_at=p.get("scores_submitted_at"),
                     template_scores=ts_list,
                 )
             )
@@ -237,10 +414,12 @@ class MatchService:
             played_at=match_data["played_at"],
             notes=match_data["notes"],
             match_mode=match_data["match_mode"],
+            status=match_data.get("status", "completed"),
             scoring_template_id=match_data.get("scoring_template_id"),
             scoring_template_name=match_data.get("scoring_template_name"),
             created_at=match_data["created_at"],
             players=player_responses,
+            unlocked_achievements=unlocked_achievements or [],
         )
 
     async def get_user_matches(
@@ -259,6 +438,7 @@ class MatchService:
                 played_at=m["played_at"],
                 notes=m["notes"],
                 match_mode=m["match_mode"],
+                status=m.get("status", "completed"),
                 scoring_template_id=m.get("scoring_template_id"),
                 scoring_template_name=m.get("scoring_template_name"),
                 created_at=m["created_at"],
@@ -270,6 +450,8 @@ class MatchService:
                         position=p["position"],
                         score=p["score"],
                         is_winner=p["is_winner"],
+                        scores_submitted=p.get("scores_submitted", False),
+                        scores_submitted_at=p.get("scores_submitted_at"),
                     )
                     for p in m["players"]
                 ],

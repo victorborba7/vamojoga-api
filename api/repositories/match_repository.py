@@ -52,6 +52,8 @@ class MatchRepository:
                 MatchPlayer.position,
                 MatchPlayer.score,
                 MatchPlayer.is_winner,
+                MatchPlayer.scores_submitted,
+                MatchPlayer.scores_submitted_at,
             )
             .join(User, User.id == MatchPlayer.user_id)
             .where(MatchPlayer.match_id == match_id)
@@ -66,6 +68,8 @@ class MatchRepository:
                 "position": row.position,
                 "score": row.score,
                 "is_winner": row.is_winner,
+                "scores_submitted": row.scores_submitted,
+                "scores_submitted_at": row.scores_submitted_at,
             }
             for row in result.all()
         ]
@@ -84,6 +88,7 @@ class MatchRepository:
                 Match.match_mode,
                 Match.scoring_template_id,
                 ScoringTemplate.name.label("scoring_template_name"),
+                Match.status,
                 Match.created_at,
             )
             .join(Game, Game.id == Match.game_id)
@@ -105,6 +110,7 @@ class MatchRepository:
             "match_mode": row.match_mode,
             "scoring_template_id": row.scoring_template_id,
             "scoring_template_name": row.scoring_template_name,
+            "status": row.status,
             "created_at": row.created_at,
         }
 
@@ -140,6 +146,7 @@ class MatchRepository:
                 Match.match_mode,
                 Match.scoring_template_id,
                 ScoringTemplate.name.label("scoring_template_name"),
+                Match.status,
                 Match.created_at,
             )
             .join(Game, Game.id == Match.game_id)
@@ -160,6 +167,8 @@ class MatchRepository:
                 MatchPlayer.position,
                 MatchPlayer.score,
                 MatchPlayer.is_winner,
+                MatchPlayer.scores_submitted,
+                MatchPlayer.scores_submitted_at,
             )
             .join(User, User.id == MatchPlayer.user_id)
             .where(MatchPlayer.match_id.in_(match_ids))
@@ -178,6 +187,8 @@ class MatchRepository:
                 "position": p.position,
                 "score": p.score,
                 "is_winner": p.is_winner,
+                "scores_submitted": p.scores_submitted,
+                "scores_submitted_at": p.scores_submitted_at,
             })
 
         # Build result
@@ -194,10 +205,43 @@ class MatchRepository:
                 "match_mode": m.match_mode,
                 "scoring_template_id": m.scoring_template_id,
                 "scoring_template_name": m.scoring_template_name,
+                "status": m.status,
                 "created_at": m.created_at,
                 "players": players_by_match.get(m.id, []),
             })
         return result
+
+    async def get_match_player(self, match_id: UUID, user_id: UUID) -> MatchPlayer | None:
+        statement = (
+            select(MatchPlayer)
+            .where(MatchPlayer.match_id == match_id, MatchPlayer.user_id == user_id)
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def update_match_player(self, match_player: MatchPlayer) -> MatchPlayer:
+        self.session.add(match_player)
+        await self.session.commit()
+        await self.session.refresh(match_player)
+        return match_player
+
+    async def update_match(self, match: Match) -> Match:
+        self.session.add(match)
+        await self.session.commit()
+        await self.session.refresh(match)
+        return match
+
+    async def delete_template_scores_for_player(self, match_player_id: UUID) -> None:
+        """Delete existing template scores for a match player (for re-submission)."""
+        from api.models.scoring_template import MatchTemplateScore
+        statement = (
+            select(MatchTemplateScore)
+            .where(MatchTemplateScore.match_player_id == match_player_id)
+        )
+        result = await self.session.execute(statement)
+        for score in result.scalars().all():
+            await self.session.delete(score)
+        await self.session.commit()
 
     async def get_matches_by_user(
         self, user_id: UUID, skip: int = 0, limit: int = 50
