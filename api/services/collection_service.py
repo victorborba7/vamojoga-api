@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.collection import Collection, CollectionJogo, CollectionMembro
+from api.models.collection import Collection, CollectionGame, CollectionMember
 from api.models.user import User
 from api.repositories.collection_repository import CollectionRepository
 from api.repositories.game_repository import GameRepository
@@ -13,10 +13,10 @@ from api.repositories.user_repository import UserRepository
 from api.schemas.collection import (
     CollectionCreate,
     CollectionDetailResponse,
-    CollectionJogoResponse,
+    CollectionGameResponse,
     CollectionResponse,
     CollectionUpdate,
-    MembroResponse,
+    MemberResponse,
 )
 
 
@@ -32,14 +32,14 @@ class CollectionService:
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _assert_membro(self, collection_id: UUID, user_id: UUID) -> CollectionMembro:
-        membro = await self.repo.get_membro(collection_id, user_id)
-        if not membro:
+    async def _assert_member(self, collection_id: UUID, user_id: UUID) -> CollectionMember:
+        member = await self.repo.get_member(collection_id, user_id)
+        if not member:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Você não é membro deste collection",
             )
-        return membro
+        return member
 
     async def _assert_owner(self, collection: Collection, user_id: UUID) -> None:
         if collection.owner_id != user_id:
@@ -49,8 +49,8 @@ class CollectionService:
             )
 
     async def _build_response(self, collection: Collection) -> CollectionResponse:
-        mc = await self.repo.count_membros(collection.id)
-        gc = await self.repo.count_jogos(collection.id)
+        mc = await self.repo.count_members(collection.id)
+        gc = await self.repo.count_games(collection.id)
         return CollectionResponse(
             id=collection.id,
             name=collection.name,
@@ -62,22 +62,22 @@ class CollectionService:
         )
 
     async def _build_detail(self, collection: Collection) -> CollectionDetailResponse:
-        membros_rows = await self.repo.get_membros_with_users(collection.id)
-        jogos_rows = await self.repo.get_jogos_with_details(collection.id)
+        members_rows = await self.repo.get_members_with_users(collection.id)
+        games_rows = await self.repo.get_games_with_details(collection.id)
 
-        membros = [
-            MembroResponse(
+        members = [
+            MemberResponse(
                 user_id=m.user_id,
                 username=user.username,
                 full_name=user.full_name,
                 role=m.role,
                 joined_at=m.joined_at,
             )
-            for m, user in membros_rows
+            for m, user in members_rows
         ]
 
-        jogos = [
-            CollectionJogoResponse(
+        games = [
+            CollectionGameResponse(
                 game_id=game.id,
                 name=game.name,
                 bgg_id=game.bgg_id,
@@ -88,7 +88,7 @@ class CollectionService:
                 added_by_username=adder_username,
                 added_at=j.added_at,
             )
-            for j, game, adder_username in jogos_rows
+            for j, game, adder_username in games_rows
         ]
 
         return CollectionDetailResponse(
@@ -97,10 +97,10 @@ class CollectionService:
             description=collection.description,
             owner_id=collection.owner_id,
             created_at=collection.created_at,
-            member_count=len(membros),
-            game_count=len(jogos),
-            members=membros,
-            games=jogos,
+            member_count=len(members),
+            game_count=len(games),
+            members=members,
+            games=games,
         )
 
     # ------------------------------------------------------------------
@@ -116,19 +116,19 @@ class CollectionService:
         collection = await self.repo.create(collection)
 
         # Dono já entra como membro owner
-        membro = CollectionMembro(
+        member = CollectionMember(
             collection_id=collection.id,
             user_id=current_user.id,
             role="owner",
         )
-        await self.repo.add_membro(membro)
+        await self.repo.add_member(member)
         await self._session.commit()
         await self._session.refresh(collection)
 
         return await self._build_detail(collection)
 
     async def listar_meus(self, current_user: User) -> list[CollectionResponse]:
-        collections = await self.repo.get_collections_do_usuario(current_user.id)
+        collections = await self.repo.get_collections_for_user(current_user.id)
         if not collections:
             return []
 
@@ -176,9 +176,9 @@ class CollectionService:
             raise HTTPException(status_code=404, detail="Collection não encontrado")
         await self._assert_owner(collection, current_user.id)
 
-        # Remove membros e jogos primeiro (sem FK cascade)
-        await self.repo.bulk_delete_membros(collection_id)
-        await self.repo.bulk_delete_jogos(collection_id)
+        # Remove members e games primeiro (sem FK cascade)
+        await self.repo.bulk_delete_members(collection_id)
+        await self.repo.bulk_delete_games(collection_id)
 
         await self.repo.delete(collection)
         await self._session.commit()
@@ -189,7 +189,7 @@ class CollectionService:
 
     async def convidar_membro(
         self, collection_id: UUID, user_id: UUID, current_user: User
-    ) -> MembroResponse:
+    ) -> MemberResponse:
         collection = await self.repo.get_by_id(collection_id)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection não encontrado")
@@ -199,20 +199,20 @@ class CollectionService:
         if not convidado:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-        existente = await self.repo.get_membro(collection_id, user_id)
+        existente = await self.repo.get_member(collection_id, user_id)
         if existente:
             raise HTTPException(status_code=400, detail="Usuário já é membro")
 
-        membro = CollectionMembro(collection_id=collection_id, user_id=user_id, role="member")
-        membro = await self.repo.add_membro(membro)
+        member = CollectionMember(collection_id=collection_id, user_id=user_id, role="member")
+        member = await self.repo.add_member(member)
         await self._session.commit()
 
-        return MembroResponse(
+        return MemberResponse(
             user_id=convidado.id,
             username=convidado.username,
             full_name=convidado.full_name,
-            role=membro.role,
-            joined_at=membro.joined_at,
+            role=member.role,
+            joined_at=member.joined_at,
         )
 
     async def remover_membro(
@@ -236,11 +236,11 @@ class CollectionService:
                 detail="O dono não pode sair do collection. Exclua o collection se quiser.",
             )
 
-        membro = await self.repo.get_membro(collection_id, user_id)
-        if not membro:
+        member = await self.repo.get_member(collection_id, user_id)
+        if not member:
             raise HTTPException(status_code=404, detail="Membro não encontrado")
 
-        await self.repo.remove_membro(membro)
+        await self.repo.remove_member(member)
         await self._session.commit()
 
     # ------------------------------------------------------------------
@@ -249,29 +249,29 @@ class CollectionService:
 
     async def adicionar_jogo(
         self, collection_id: UUID, game_id: UUID, current_user: User
-    ) -> CollectionJogoResponse:
+    ) -> CollectionGameResponse:
         collection = await self.repo.get_by_id(collection_id)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection não encontrado")
-        await self._assert_membro(collection_id, current_user.id)
+        await self._assert_member(collection_id, current_user.id)
 
         game = await self.game_repo.get_by_id(game_id)
         if not game:
             raise HTTPException(status_code=404, detail="Jogo não encontrado")
 
-        existente = await self.repo.get_jogo(collection_id, game_id)
+        existente = await self.repo.get_game(collection_id, game_id)
         if existente:
             raise HTTPException(status_code=400, detail="Jogo já está no collection")
 
-        jogo = CollectionJogo(
+        coll_game = CollectionGame(
             collection_id=collection_id,
             game_id=game_id,
             added_by=current_user.id,
         )
-        jogo = await self.repo.add_jogo(jogo)
+        coll_game = await self.repo.add_game(coll_game)
         await self._session.commit()
 
-        return CollectionJogoResponse(
+        return CollectionGameResponse(
             game_id=game.id,
             name=game.name,
             bgg_id=game.bgg_id,
@@ -280,47 +280,47 @@ class CollectionService:
             year=getattr(game, "year", None),
             added_by=current_user.id,
             added_by_username=current_user.username,
-            added_at=jogo.added_at,
+            added_at=coll_game.added_at,
         )
 
     async def jogos_disponiveis(
         self, collection_id: UUID, current_user: User
-    ) -> list[CollectionJogoResponse]:
+    ) -> list[CollectionGameResponse]:
         """Jogos nas biblitoecas dos membros que ainda não estão na collection."""
         collection = await self.repo.get_by_id(collection_id)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection não encontrado")
-        await self._assert_membro(collection_id, current_user.id)
+        await self._assert_member(collection_id, current_user.id)
 
         # jogos já na collection
         ja_na_collection = {
-            j.game_id for j in await self.repo.get_jogos(collection_id)
+            j.game_id for j in await self.repo.get_games(collection_id)
         }
 
         # Busca membros e seus dados em batch
-        membros = await self.repo.get_membros(collection_id)
-        member_ids = [m.user_id for m in membros]
+        members = await self.repo.get_members(collection_id)
+        member_ids = [m.user_id for m in members]
         users = await self.user_repo.get_by_ids(member_ids)
         user_map = {u.id: u for u in users}
 
         # Busca bibliotecas de todos os membros com jogos em batch
         seen: set[UUID] = set()
-        result: list[CollectionJogoResponse] = []
-        for membro in membros:
-            entries = await self.library_repo.get_by_user_with_games(membro.user_id)
-            user = user_map.get(membro.user_id)
+        result: list[CollectionGameResponse] = []
+        for member in members:
+            entries = await self.library_repo.get_by_user_with_games(member.user_id)
+            user = user_map.get(member.user_id)
             for entry, game in entries:
                 if entry.game_id in ja_na_collection or entry.game_id in seen:
                     continue
                 seen.add(entry.game_id)
-                result.append(CollectionJogoResponse(
+                result.append(CollectionGameResponse(
                     game_id=game.id,
                     name=game.name,
                     bgg_id=game.bgg_id,
                     image_url=getattr(game, "image_url", None),
                     bayes_rating=getattr(game, "bayes_rating", None),
                     year=getattr(game, "year", None),
-                    added_by=membro.user_id,
+                    added_by=member.user_id,
                     added_by_username=user.username if user else None,
                     added_at=entry.created_at,
                 ))
@@ -334,18 +334,18 @@ class CollectionService:
         collection = await self.repo.get_by_id(collection_id)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection não encontrado")
-        await self._assert_membro(collection_id, current_user.id)
+        await self._assert_member(collection_id, current_user.id)
 
-        jogo = await self.repo.get_jogo(collection_id, game_id)
-        if not jogo:
+        coll_game = await self.repo.get_game(collection_id, game_id)
+        if not coll_game:
             raise HTTPException(status_code=404, detail="Jogo não está no collection")
 
         # Apenas quem adicionou ou o dono pode remover
-        if jogo.added_by != current_user.id and collection.owner_id != current_user.id:
+        if coll_game.added_by != current_user.id and collection.owner_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Apenas quem adicionou o jogo ou o dono pode removê-lo",
             )
 
-        await self.repo.remove_jogo(jogo)
+        await self.repo.remove_game(coll_game)
         await self._session.commit()

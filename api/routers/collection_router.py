@@ -9,10 +9,10 @@ from api.models.user import User
 from api.schemas.collection import (
     CollectionCreate,
     CollectionDetailResponse,
-    CollectionJogoResponse,
+    CollectionGameResponse,
     CollectionResponse,
     CollectionUpdate,
-    MembroResponse,
+    MemberResponse,
 )
 from api.services.collection_service import CollectionService
 
@@ -87,18 +87,18 @@ class _UserIdBody(BaseModel):
     user_id: UUID
 
 
-@router.post("/{collection_id}/membros", response_model=MembroResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{collection_id}/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
 async def convidar_membro(
     collection_id: UUID,
     body: _UserIdBody,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> MembroResponse:
+) -> MemberResponse:
     """Convida um usuário para o collection (somente dono)."""
     return await CollectionService(session).convidar_membro(collection_id, body.user_id, current_user)
 
 
-@router.delete("/{collection_id}/membros/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{collection_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remover_membro(
     collection_id: UUID,
     user_id: UUID,
@@ -117,28 +117,28 @@ class _GameIdBody(BaseModel):
     game_id: UUID
 
 
-@router.get("/{collection_id}/jogos-disponiveis", response_model=list[CollectionJogoResponse])
+@router.get("/{collection_id}/available-games", response_model=list[CollectionGameResponse])
 async def jogos_disponiveis(
     collection_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> list[CollectionJogoResponse]:
+) -> list[CollectionGameResponse]:
     """Jogos nas bibliotecas dos membros que ainda não estão na collection."""
     return await CollectionService(session).jogos_disponiveis(collection_id, current_user)
 
 
-@router.post("/{collection_id}/jogos", response_model=CollectionJogoResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{collection_id}/games", response_model=CollectionGameResponse, status_code=status.HTTP_201_CREATED)
 async def adicionar_jogo(
     collection_id: UUID,
     body: _GameIdBody,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> CollectionJogoResponse:
+) -> CollectionGameResponse:
     """Adiciona um jogo ao collection (qualquer membro)."""
     return await CollectionService(session).adicionar_jogo(collection_id, body.game_id, current_user)
 
 
-@router.delete("/{collection_id}/jogos/{game_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{collection_id}/games/{game_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remover_jogo(
     collection_id: UUID,
     game_id: UUID,

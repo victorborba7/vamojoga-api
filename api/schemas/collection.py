@@ -22,7 +22,7 @@ class CollectionUpdate(BaseModel):
 # Responses
 # ---------------------------------------------------------------------------
 
-class MembroResponse(BaseModel):
+class MemberResponse(BaseModel):
     user_id: UUID
     username: str
     full_name: str | None = None
@@ -32,7 +32,7 @@ class MembroResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class CollectionJogoResponse(BaseModel):
+class CollectionGameResponse(BaseModel):
     game_id: UUID
     name: str
     bgg_id: int | None = None
@@ -59,5 +59,5 @@ class CollectionResponse(BaseModel):
 
 
 class CollectionDetailResponse(CollectionResponse):
-    members: list[MembroResponse] = []
-    games: list[CollectionJogoResponse] = []
+    members: list[MemberResponse] = []
+    games: list[CollectionGameResponse] = []

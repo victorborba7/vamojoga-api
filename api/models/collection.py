@@ -18,8 +18,8 @@ class Collection(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
-class CollectionMembro(SQLModel, table=True):
-    __tablename__ = "collection_membros"
+class CollectionMember(SQLModel, table=True):
+    __tablename__ = "collection_members"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     collection_id: uuid.UUID = Field(foreign_key="collections.id", index=True)
@@ -29,8 +29,8 @@ class CollectionMembro(SQLModel, table=True):
     joined_at: datetime = Field(default_factory=_utcnow)
 
 
-class CollectionJogo(SQLModel, table=True):
-    __tablename__ = "collection_jogos"
+class CollectionGame(SQLModel, table=True):
+    __tablename__ = "collection_games"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     collection_id: uuid.UUID = Field(foreign_key="collections.id", index=True)
