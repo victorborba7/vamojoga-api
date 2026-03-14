@@ -8,7 +8,7 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-VALID_MATCH_MODES = ("individual", "team")
+VALID_MATCH_MODES = ("individual", "team", "cooperative")
 
 
 class ScoringTemplate(SQLModel, table=True):

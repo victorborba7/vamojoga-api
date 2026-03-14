@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 # ---- Field types ----
 VALID_FIELD_TYPES = ("numeric", "ranking", "boolean")
-VALID_MATCH_MODES = ("individual", "team")
+VALID_MATCH_MODES = ("individual", "team", "cooperative")
 
 
 # ---- Request ----
