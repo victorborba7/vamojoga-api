@@ -13,7 +13,8 @@ class MatchPlayer(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     match_id: uuid.UUID = Field(foreign_key="matches.id", index=True)
-    user_id: uuid.UUID = Field(foreign_key="users.id", index=True)
+    user_id: uuid.UUID | None = Field(default=None, foreign_key="users.id", index=True)
+    guest_id: uuid.UUID | None = Field(default=None, foreign_key="guests.id", index=True)
     position: int = Field(ge=1)
     score: int = Field(default=0)
     is_winner: bool = Field(default=False)

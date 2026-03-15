@@ -13,6 +13,8 @@ from api.models.publisher import Publisher, GamePublisher
 from api.models.scoring_template import ScoringTemplate, ScoringTemplateField, MatchTemplateScore
 from api.models.achievement import Achievement, UserAchievement
 from api.models.game_price import PriceSource, GamePrice
+from api.models.guest import Guest
+from api.models.guest_invite_token import GuestInviteToken
 
 __all__ = [
     "User", "Game", "Match", "MatchPlayer", "Friendship",
@@ -22,4 +24,5 @@ __all__ = [
     "ScoringTemplate", "ScoringTemplateField", "MatchTemplateScore",
     "Achievement", "UserAchievement",
     "PriceSource", "GamePrice",
+    "Guest", "GuestInviteToken",
 ]

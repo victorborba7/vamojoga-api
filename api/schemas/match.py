@@ -9,7 +9,8 @@ from api.schemas.achievement import NewlyUnlockedAchievement
 
 # --- Request ---
 class MatchPlayerCreate(BaseModel):
-    user_id: UUID
+    user_id: UUID | None = None
+    guest_id: UUID | None = None
     position: int = 0
     score: int = 0
     is_winner: bool = False
@@ -33,8 +34,11 @@ class PlayerScoreSubmit(BaseModel):
 # --- Response ---
 class MatchPlayerResponse(BaseModel):
     id: UUID
-    user_id: UUID
+    user_id: UUID | None = None
+    guest_id: UUID | None = None
     username: str | None = None
+    guest_name: str | None = None
+    participant_name: str | None = None
     position: int
     score: int
     is_winner: bool

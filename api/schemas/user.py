@@ -10,6 +10,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=100)
     full_name: str | None = Field(default=None, max_length=100)
+    invite_token: str | None = None
 
 
 class UserLogin(BaseModel):
@@ -46,4 +47,11 @@ class ResetPasswordRequest(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     token: str
+
+
+class GuestInviteValidationResponse(BaseModel):
+    guest_name: str
+    email: EmailStr
+    expires_at: datetime
+    is_valid: bool = True
 

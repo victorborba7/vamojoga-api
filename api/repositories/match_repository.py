@@ -8,6 +8,7 @@ from api.models.match import Match
 from api.models.match_player import MatchPlayer
 from api.models.scoring_template import ScoringTemplate
 from api.models.user import User
+from api.models.guest import Guest
 
 
 class MatchRepository:
@@ -48,14 +49,17 @@ class MatchRepository:
             select(
                 MatchPlayer.id,
                 MatchPlayer.user_id,
+                MatchPlayer.guest_id,
                 User.username,
+                Guest.name.label("guest_name"),
                 MatchPlayer.position,
                 MatchPlayer.score,
                 MatchPlayer.is_winner,
                 MatchPlayer.scores_submitted,
                 MatchPlayer.scores_submitted_at,
             )
-            .join(User, User.id == MatchPlayer.user_id)
+            .outerjoin(User, User.id == MatchPlayer.user_id)
+            .outerjoin(Guest, Guest.id == MatchPlayer.guest_id)
             .where(MatchPlayer.match_id == match_id)
             .order_by(MatchPlayer.position)
         )
@@ -64,7 +68,9 @@ class MatchRepository:
             {
                 "id": row.id,
                 "user_id": row.user_id,
+                "guest_id": row.guest_id,
                 "username": row.username,
+                "guest_name": row.guest_name,
                 "position": row.position,
                 "score": row.score,
                 "is_winner": row.is_winner,
@@ -163,14 +169,17 @@ class MatchRepository:
                 MatchPlayer.id,
                 MatchPlayer.match_id,
                 MatchPlayer.user_id,
+                MatchPlayer.guest_id,
                 User.username,
+                Guest.name.label("guest_name"),
                 MatchPlayer.position,
                 MatchPlayer.score,
                 MatchPlayer.is_winner,
                 MatchPlayer.scores_submitted,
                 MatchPlayer.scores_submitted_at,
             )
-            .join(User, User.id == MatchPlayer.user_id)
+            .outerjoin(User, User.id == MatchPlayer.user_id)
+            .outerjoin(Guest, Guest.id == MatchPlayer.guest_id)
             .where(MatchPlayer.match_id.in_(match_ids))
             .order_by(MatchPlayer.position)
         )
@@ -183,7 +192,9 @@ class MatchRepository:
             players_by_match.setdefault(p.match_id, []).append({
                 "id": p.id,
                 "user_id": p.user_id,
+                "guest_id": p.guest_id,
                 "username": p.username,
+                "guest_name": p.guest_name,
                 "position": p.position,
                 "score": p.score,
                 "is_winner": p.is_winner,

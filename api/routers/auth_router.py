@@ -6,6 +6,7 @@ from api.core.security import get_current_user
 from api.models.user import User
 from api.schemas.user import (
     ForgotPasswordRequest,
+    GuestInviteValidationResponse,
     ResetPasswordRequest,
     TokenResponse,
     UserCreate,
@@ -14,6 +15,7 @@ from api.schemas.user import (
     VerifyEmailRequest,
 )
 from api.services.auth_service import AuthService
+from api.services.guest_service import GuestService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -25,6 +27,14 @@ async def register(
 ) -> UserResponse:
     service = AuthService(session)
     return await service.register(data)
+
+
+@router.get("/guest-invite/{token}", response_model=GuestInviteValidationResponse)
+async def validate_guest_invite(
+    token: str,
+    session: AsyncSession = Depends(get_session),
+) -> GuestInviteValidationResponse:
+    return await GuestService(session).validate_invite(token)
 
 
 @router.post("/login", response_model=TokenResponse)

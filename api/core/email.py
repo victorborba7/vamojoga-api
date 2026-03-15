@@ -88,3 +88,35 @@ def send_verification_email(to: str, username: str, token: str) -> None:
 </body>
 </html>"""
     send_email(to, "Confirme seu e-mail — VamoJoga", html)
+
+
+def send_guest_invite_email(to: str, guest_name: str, token: str) -> None:
+    register_url = f"{settings.FRONTEND_URL}/register?invite={token}&email={to}"
+    html = f"""\
+<!DOCTYPE html>
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e5e5e5; padding: 40px 20px;">
+  <div style="max-width: 480px; margin: 0 auto; background: #1a1a1a; border-radius: 16px; padding: 32px; border: 1px solid #333;">
+    <h1 style="color: #a78bfa; font-size: 24px; margin: 0 0 8px;">VamoJoga</h1>
+    <p style="color: #999; font-size: 14px; margin: 0 0 24px;">Convite de cadastro</p>
+    <p style="font-size: 15px; line-height: 1.6;">
+      Ola <strong>{guest_name}</strong>,<br><br>
+      Voce participou de partidas no VamoJoga como convidado. Crie sua conta para acompanhar historico e ranking.
+    </p>
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="{register_url}" style="display: inline-block; background: #7c3aed; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 12px; font-size: 15px; font-weight: 600;">
+        Criar Conta
+      </a>
+    </div>
+    <p style="font-size: 13px; color: #666; line-height: 1.5;">
+      Este convite expira em <strong>7 dias</strong>.
+    </p>
+    <hr style="border: none; border-top: 1px solid #333; margin: 24px 0;">
+    <p style="font-size: 11px; color: #555; text-align: center;">
+      Se o botao nao funcionar, copie e cole este link no navegador:<br>
+      <a href="{register_url}" style="color: #7c3aed; word-break: break-all;">{register_url}</a>
+    </p>
+  </div>
+</body>
+</html>"""
+    send_email(to, "Convite para cadastro — VamoJoga", html)

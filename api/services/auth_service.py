@@ -11,6 +11,7 @@ from api.core.email import send_password_reset_email, send_verification_email
 from api.models.user import User
 from api.models.password_reset import PasswordResetToken
 from api.models.email_verification import EmailVerificationToken
+from api.repositories.guest_repository import GuestRepository
 from api.repositories.user_repository import UserRepository
 from api.schemas.user import TokenResponse, UserCreate, UserLogin, UserResponse
 
@@ -21,8 +22,27 @@ class AuthService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repository = UserRepository(session)
+        self.guest_repository = GuestRepository(session)
 
     async def register(self, data: UserCreate) -> UserResponse:
+        invite = None
+        if data.invite_token:
+            invite = await self.guest_repository.get_invite_token(data.invite_token)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            if not invite or invite.used or invite.expires_at <= now:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Convite invalido ou expirado",
+                )
+
+            invite_email = invite.email.lower().strip()
+            request_email = str(data.email).lower().strip()
+            if invite_email != request_email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Este convite pertence a outro e-mail",
+                )
+
         existing_email = await self.repository.get_by_email(data.email)
         if existing_email:
             raise HTTPException(
@@ -44,6 +64,9 @@ class AuthService:
             full_name=data.full_name,
         )
         created_user = await self.repository.create(user)
+
+        if invite is not None:
+            await self.guest_repository.mark_invite_as_used(invite)
 
         # Send verification email
         await self._send_verification_email(created_user)

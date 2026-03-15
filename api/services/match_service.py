@@ -9,6 +9,7 @@ from api.models.match import Match
 from api.models.match_player import MatchPlayer
 from api.models.scoring_template import MatchTemplateScore
 from api.models.user import User
+from api.repositories.guest_repository import GuestRepository
 from api.repositories.friendship_repository import FriendshipRepository
 from api.repositories.game_repository import GameRepository
 from api.repositories.match_repository import MatchRepository
@@ -26,6 +27,7 @@ class MatchService:
         self.match_repo = MatchRepository(session)
         self.game_repo = GameRepository(session)
         self.user_repo = UserRepository(session)
+        self.guest_repo = GuestRepository(session)
         self.template_repo = ScoringTemplateRepository(session)
         self.achievement_service = AchievementService(session)
         self.push_service = PushService(session)
@@ -50,22 +52,52 @@ class MatchService:
                 detail=f"Número de jogadores deve ser entre {game.min_players} e {game.max_players}",
             )
 
-        # Validar jogadores existem
-        user_ids = [p.user_id for p in data.players]
-        if len(set(user_ids)) != len(user_ids):
+        # Validar jogadores/convidados
+        user_ids: list[UUID] = []
+        guest_ids: list[UUID] = []
+        participant_keys: set[tuple[str, UUID]] = set()
+        for p in data.players:
+            if (p.user_id is None and p.guest_id is None) or (p.user_id is not None and p.guest_id is not None):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cada participante deve ter user_id ou guest_id (apenas um)",
+                )
+
+            if p.user_id is not None:
+                key = ("u", p.user_id)
+                user_ids.append(p.user_id)
+            else:
+                key = ("g", p.guest_id)
+                guest_ids.append(p.guest_id)
+
+            if key in participant_keys:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Participantes duplicados na partida",
+                )
+            participant_keys.add(key)
+
+        # Guests do not self-submit scores
+        if data.collaborative_scoring and guest_ids:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Jogadores duplicados na partida",
+                detail="Partidas colaborativas nao permitem convidados",
             )
 
         found_users = await self.user_repo.get_by_ids(user_ids)
+        user_map = {u.id: u for u in found_users}
         if len(found_users) != len(user_ids):
-            found_ids = {u.id for u in found_users}
-            missing = [uid for uid in user_ids if uid not in found_ids]
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Usuário {missing[0]} não encontrado",
-            )
+            missing = [uid for uid in user_ids if uid not in user_map]
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Usuario {missing[0]} nao encontrado")
+
+        found_guests = await self.guest_repo.get_by_ids(guest_ids)
+        guest_map = {g.id: g for g in found_guests}
+        if len(found_guests) != len(guest_ids):
+            missing = [gid for gid in guest_ids if gid not in guest_map]
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Convidado {missing[0]} nao encontrado")
+        invalid_owner = [g.id for g in found_guests if g.owner_id != current_user.id]
+        if invalid_owner:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Convidado nao pertence ao usuario atual")
 
         # Validar template se fornecido
         template_name = None
@@ -104,6 +136,7 @@ class MatchService:
             MatchPlayer(
                 match_id=created_match.id,
                 user_id=p.user_id,
+                guest_id=p.guest_id,
                 position=p.position if not is_collaborative else 0,
                 score=p.score if not is_collaborative else 0,
                 is_winner=p.is_winner if not is_collaborative else False,
@@ -115,12 +148,16 @@ class MatchService:
 
         # Criar scores de template se houver (only for non-collaborative)
         if not is_collaborative:
-            player_map = {p.user_id: mp for p, mp in zip(data.players, created_players)}
+            player_map = {
+                (("u", p.user_id) if p.user_id is not None else ("g", p.guest_id)): mp
+                for p, mp in zip(data.players, created_players)
+            }
             for p_data in data.players:
                 if p_data.template_scores:
+                    key = ("u", p_data.user_id) if p_data.user_id is not None else ("g", p_data.guest_id)
                     scores = [
                         MatchTemplateScore(
-                            match_player_id=player_map[p_data.user_id].id,
+                            match_player_id=player_map[key].id,
                             template_field_id=ts.template_field_id,
                             numeric_value=ts.numeric_value,
                             boolean_value=ts.boolean_value,
@@ -133,7 +170,7 @@ class MatchService:
         # For collaborative, notify players to submit scores
         if is_collaborative:
             for p_data in data.players:
-                if p_data.user_id != current_user.id:
+                if p_data.user_id is not None and p_data.user_id != current_user.id:
                     asyncio.create_task(
                         self.push_service.send_to_user(
                             p_data.user_id,
@@ -165,6 +202,11 @@ class MatchService:
                     MatchPlayerResponse(
                         id=mp.id,
                         user_id=mp.user_id,
+                        guest_id=mp.guest_id,
+                        username=user_map.get(mp.user_id).username if mp.user_id in user_map else None,
+                        guest_name=guest_map.get(mp.guest_id).name if mp.guest_id in guest_map else None,
+                        participant_name=(user_map.get(mp.user_id).username if mp.user_id in user_map else None)
+                        or (guest_map.get(mp.guest_id).name if mp.guest_id in guest_map else None),
                         position=mp.position,
                         score=mp.score,
                         is_winner=mp.is_winner,
@@ -192,6 +234,11 @@ class MatchService:
                 MatchPlayerResponse(
                     id=mp.id,
                     user_id=mp.user_id,
+                    guest_id=mp.guest_id,
+                    username=user_map.get(mp.user_id).username if mp.user_id in user_map else None,
+                    guest_name=guest_map.get(mp.guest_id).name if mp.guest_id in guest_map else None,
+                    participant_name=(user_map.get(mp.user_id).username if mp.user_id in user_map else None)
+                    or (guest_map.get(mp.guest_id).name if mp.guest_id in guest_map else None),
                     position=mp.position,
                     score=mp.score,
                     is_winner=mp.is_winner,
@@ -207,6 +254,8 @@ class MatchService:
         all_unlocked = []
         for p_data in players_data:
             uid = p_data.user_id if hasattr(p_data, 'user_id') else p_data
+            if uid is None:
+                continue
             unlocked = await self.achievement_service.check_and_award(
                 user_id=uid,
                 match_id=match_id,
@@ -369,7 +418,7 @@ class MatchService:
             winner_user = found[0] if found else None
 
         for mp in players:
-            if mp.user_id != current_user.id:
+            if mp.user_id is not None and mp.user_id != current_user.id:
                 asyncio.create_task(
                     self.push_service.send_to_user(
                         mp.user_id,
@@ -412,7 +461,10 @@ class MatchService:
                 MatchPlayerResponse(
                     id=p["id"],
                     user_id=p["user_id"],
+                    guest_id=p.get("guest_id"),
                     username=p["username"],
+                    guest_name=p.get("guest_name"),
+                    participant_name=p["username"] or p.get("guest_name"),
                     position=p["position"],
                     score=p["score"],
                     is_winner=p["is_winner"],
@@ -463,7 +515,10 @@ class MatchService:
                     MatchPlayerResponse(
                         id=p["id"],
                         user_id=p["user_id"],
+                        guest_id=p.get("guest_id"),
                         username=p["username"],
+                        guest_name=p.get("guest_name"),
+                        participant_name=p["username"] or p.get("guest_name"),
                         position=p["position"],
                         score=p["score"],
                         is_winner=p["is_winner"],
