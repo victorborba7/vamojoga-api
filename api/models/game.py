@@ -49,3 +49,9 @@ class Game(SQLModel, table=True):
     ludopedia_id: int | None = Field(default=None)
     ludopedia_url: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     last_ludopedia_sync_at: datetime | None = Field(default=None)
+
+    # Expansão → jogo base
+    # parent_bgg_id: bgg_id do jogo pai (populado durante o sync BGG)
+    # parent_game_id: UUID resolvido do jogo pai (preenchido se o pai já existe no banco)
+    parent_bgg_id: int | None = Field(default=None)
+    parent_game_id: uuid.UUID | None = Field(default=None, foreign_key="games.id", nullable=True)

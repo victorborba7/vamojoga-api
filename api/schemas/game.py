@@ -82,6 +82,9 @@ class GameResponse(BaseModel):
     # Ludopedia (Portuguese localization)
     name_pt: str | None = None
     description_pt: str | None = None
+    # Expansão → jogo base
+    parent_bgg_id: int | None = None
+    parent_game_id: UUID | None = None
     # Star schema entities (populated on detail endpoint)
     mechanics: list[str] = []
     categories: list[str] = []
