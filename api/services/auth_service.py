@@ -1,6 +1,7 @@
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,8 +10,10 @@ from sqlalchemy import select
 from api.core.security import create_access_token, hash_password, verify_password
 from api.core.email import send_password_reset_email, send_verification_email
 from api.models.user import User
+from api.models.friendship import Friendship
 from api.models.password_reset import PasswordResetToken
 from api.models.email_verification import EmailVerificationToken
+from api.repositories.friendship_repository import FriendshipRepository
 from api.repositories.guest_repository import GuestRepository
 from api.repositories.user_repository import UserRepository
 from api.schemas.user import TokenResponse, UserCreate, UserLogin, UserResponse
@@ -23,6 +26,7 @@ class AuthService:
         self.session = session
         self.repository = UserRepository(session)
         self.guest_repository = GuestRepository(session)
+        self.friendship_repository = FriendshipRepository(session)
 
     async def register(self, data: UserCreate) -> UserResponse:
         invite = None
@@ -64,6 +68,34 @@ class AuthService:
             full_name=data.full_name,
         )
         created_user = await self.repository.create(user)
+
+        owner_ids = await self.guest_repository.get_owner_ids_by_guest_email(created_user.email)
+
+        merge_result = await self.guest_repository.merge_guest_history_into_user_by_email(
+            email=created_user.email,
+            user_id=created_user.id,
+        )
+
+        friendship_result = await self._link_guest_owners_as_friends(
+            new_user_id=created_user.id,
+            owner_ids=owner_ids,
+        )
+        if merge_result["updated_players"] > 0 or merge_result["deleted_duplicates"] > 0:
+            logger.info(
+                "Guest history merged on register for user_id=%s email=%s guests=%s updated=%s deleted_duplicates=%s",
+                created_user.id,
+                created_user.email,
+                merge_result["matched_guests"],
+                merge_result["updated_players"],
+                merge_result["deleted_duplicates"],
+            )
+        if friendship_result["created"] > 0 or friendship_result["updated"] > 0:
+            logger.info(
+                "Guest owners linked as friends for user_id=%s created=%s updated=%s",
+                created_user.id,
+                friendship_result["created"],
+                friendship_result["updated"],
+            )
 
         if invite is not None:
             await self.guest_repository.mark_invite_as_used(invite)
@@ -219,3 +251,26 @@ class AuthService:
             )
 
         await self._send_verification_email(user)
+
+    async def _link_guest_owners_as_friends(self, new_user_id: UUID, owner_ids: list[UUID]) -> dict[str, int]:
+        created = 0
+        updated = 0
+        for owner_id in set(owner_ids):
+            if owner_id == new_user_id:
+                continue
+
+            existing = await self.friendship_repository.get_between_users(new_user_id, owner_id)
+            if not existing:
+                await self.friendship_repository.create(
+                    Friendship(
+                        requester_id=owner_id,
+                        addressee_id=new_user_id,
+                        status="accepted",
+                    )
+                )
+                created += 1
+            elif existing.status != "accepted":
+                await self.friendship_repository.update_status(existing, "accepted")
+                updated += 1
+
+        return {"created": created, "updated": updated}

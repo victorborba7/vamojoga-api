@@ -249,13 +249,21 @@ class MatchService:
         )
 
     async def _award_achievements_and_notify(
-        self, players_data, match_id, game_id, current_user, game
+        self,
+        players_data,
+        match_id,
+        game_id,
+        current_user,
+        game,
+        notify_friends_about_registration: bool = True,
     ):
         all_unlocked = []
+        participant_user_ids: set[UUID] = set()
         for p_data in players_data:
             uid = p_data.user_id if hasattr(p_data, 'user_id') else p_data
             if uid is None:
                 continue
+            participant_user_ids.add(uid)
             unlocked = await self.achievement_service.check_and_award(
                 user_id=uid,
                 match_id=match_id,
@@ -282,6 +290,10 @@ class MatchService:
                     for f in friendships
                 ]
                 for friend_id in friend_ids:
+                    if friend_id not in participant_user_ids:
+                        continue
+                    if friend_id == current_user.id:
+                        continue
                     await self.push_service.send_to_user(
                         friend_id,
                         f"{current_user.username} registrou uma partida",
@@ -291,7 +303,8 @@ class MatchService:
             except Exception:
                 pass
 
-        asyncio.create_task(_notify_friends())
+        if notify_friends_about_registration:
+            asyncio.create_task(_notify_friends())
         return all_unlocked
 
     async def submit_player_scores(
@@ -430,7 +443,12 @@ class MatchService:
 
         # Award achievements
         all_unlocked = await self._award_achievements_and_notify(
-            players, match.id, match.game_id, current_user, game
+            players,
+            match.id,
+            match.game_id,
+            current_user,
+            game,
+            notify_friends_about_registration=False,
         )
 
         return await self.get_match(match.id, unlocked_achievements=all_unlocked)
