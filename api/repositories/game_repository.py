@@ -130,10 +130,11 @@ class GameRepository:
     ) -> list[Game]:
         """
         Retorna jogos recomendados baseados nas mecânicas dos jogos da
-        biblioteca do usuário, excluindo jogos que ele já possui.
-        Ordenados por número de mecânicas em comum (desc) e depois por rating.
+        biblioteca e favoritos do usuário, excluindo jogos que ele já possui.
+        Mecânicas de jogos favoritados têm peso 2x na pontuação.
         """
         from api.models.user_game_library import UserGameLibrary
+        from api.models.user_game_favorite import UserGameFavorite
         from api.models.mechanic import GameMechanic
         from sqlalchemy import distinct, Integer
 
@@ -144,33 +145,61 @@ class GameRepository:
             .scalar_subquery()
         )
 
-        # Subquery: mechanic_ids dos jogos que o usuário tem
-        user_mechanic_subq = (
+        # Subquery: mechanic_ids dos jogos da biblioteca
+        library_mechanic_subq = (
             select(distinct(GameMechanic.mechanic_id))
             .where(GameMechanic.game_id.in_(owned_subq))
             .scalar_subquery()
         )
 
-        # Conta quantas mecânicas em comum cada jogo candidato tem
-        overlap_count = (
+        # Subquery: IDs dos jogos favoritos
+        fav_subq = (
+            select(UserGameFavorite.game_id)
+            .where(UserGameFavorite.user_id == user_id)
+            .scalar_subquery()
+        )
+
+        # Subquery: mechanic_ids dos jogos favoritos
+        fav_mechanic_subq = (
+            select(distinct(GameMechanic.mechanic_id))
+            .where(GameMechanic.game_id.in_(fav_subq))
+            .scalar_subquery()
+        )
+
+        # Overlap da biblioteca (peso 1)
+        library_overlap = (
             select(func.count())
             .where(
                 GameMechanic.game_id == Game.id,
-                GameMechanic.mechanic_id.in_(user_mechanic_subq),
+                GameMechanic.mechanic_id.in_(library_mechanic_subq),
             )
             .correlate(Game)
             .scalar_subquery()
         )
+
+        # Overlap dos favoritos (peso 2)
+        fav_overlap = (
+            select(func.count())
+            .where(
+                GameMechanic.game_id == Game.id,
+                GameMechanic.mechanic_id.in_(fav_mechanic_subq),
+            )
+            .correlate(Game)
+            .scalar_subquery()
+        )
+
+        # Score combinado: biblioteca + 2 × favoritos
+        score = library_overlap.cast(Integer) + fav_overlap.cast(Integer) * 2
 
         statement = (
             select(Game)
             .where(
                 Game.is_active == True,  # noqa: E712
                 Game.id.not_in(owned_subq),
-                overlap_count > 0,
+                library_overlap > 0,
             )
             .order_by(
-                overlap_count.cast(Integer).desc(),
+                score.desc(),
                 nullslast(Game.bayes_rating.desc()),
                 nullslast(Game.rank),
             )
