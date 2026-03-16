@@ -35,6 +35,7 @@ class MemberResponse(BaseModel):
 class CollectionGameResponse(BaseModel):
     game_id: UUID
     name: str
+    name_pt: str | None = None
     bgg_id: int | None = None
     image_url: str | None = None
     bayes_rating: float | None = None

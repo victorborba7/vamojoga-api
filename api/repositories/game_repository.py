@@ -73,12 +73,15 @@ class GameRepository:
 
         # Nome do jogo normalizado no banco via regexp_replace postgres
         normalized_name = func.regexp_replace(Game.name, r"[^\w\s]", " ", "g")
+        normalized_name_pt = func.regexp_replace(Game.name_pt, r"[^\w\s]", " ", "g")
 
         filters = [
             Game.is_active == True,  # noqa: E712
             or_(
                 Game.name.ilike(f"%{query}%"),
                 normalized_name.ilike(f"%{clean_query}%"),
+                Game.name_pt.ilike(f"%{query}%"),
+                normalized_name_pt.ilike(f"%{clean_query}%"),
             ),
         ]
         if exclude_expansions:
@@ -96,6 +99,8 @@ class GameRepository:
                         or_(
                             Game.name.ilike(f"{query}%"),
                             normalized_name.ilike(f"{clean_query}%"),
+                            Game.name_pt.ilike(f"{query}%"),
+                            normalized_name_pt.ilike(f"{clean_query}%"),
                         ),
                         0,
                     ),

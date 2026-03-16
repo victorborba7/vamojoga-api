@@ -42,3 +42,10 @@ class Game(SQLModel, table=True):
     playing_time: int | None = Field(default=None)
     last_bgg_sync_at: datetime | None = Field(default=None)
     # mechanics, categories, designers, publishers → see models/bgg_entities.py (star schema)
+
+    # Ludopedia enrichment (Portuguese localization, populated by sync-ludopedia pipeline)
+    name_pt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    description_pt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    ludopedia_id: int | None = Field(default=None)
+    ludopedia_url: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    last_ludopedia_sync_at: datetime | None = Field(default=None)

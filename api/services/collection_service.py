@@ -80,6 +80,7 @@ class CollectionService:
             CollectionGameResponse(
                 game_id=game.id,
                 name=game.name,
+                name_pt=getattr(game, "name_pt", None),
                 bgg_id=game.bgg_id,
                 image_url=getattr(game, "image_url", None),
                 bayes_rating=getattr(game, "bayes_rating", None),
@@ -274,6 +275,7 @@ class CollectionService:
         return CollectionGameResponse(
             game_id=game.id,
             name=game.name,
+            name_pt=getattr(game, "name_pt", None),
             bgg_id=game.bgg_id,
             image_url=getattr(game, "image_url", None),
             bayes_rating=getattr(game, "bayes_rating", None),
@@ -316,6 +318,7 @@ class CollectionService:
                 result.append(CollectionGameResponse(
                     game_id=game.id,
                     name=game.name,
+                    name_pt=getattr(game, "name_pt", None),
                     bgg_id=game.bgg_id,
                     image_url=getattr(game, "image_url", None),
                     bayes_rating=getattr(game, "bayes_rating", None),

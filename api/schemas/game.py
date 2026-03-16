@@ -79,6 +79,9 @@ class GameResponse(BaseModel):
     thumbnail_url: str | None = None
     playing_time: int | None = None
     last_bgg_sync_at: datetime | None = None
+    # Ludopedia (Portuguese localization)
+    name_pt: str | None = None
+    description_pt: str | None = None
     # Star schema entities (populated on detail endpoint)
     mechanics: list[str] = []
     categories: list[str] = []
