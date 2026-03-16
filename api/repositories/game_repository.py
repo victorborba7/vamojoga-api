@@ -2,7 +2,7 @@ import re
 import uuid
 from uuid import UUID
 
-from sqlalchemy import case, func, nullslast, or_, select
+from sqlalchemy import case, func, literal, nullslast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.game import Game
@@ -132,74 +132,70 @@ class GameRepository:
         Retorna jogos recomendados baseados nas mecânicas dos jogos da
         biblioteca e favoritos do usuário, excluindo jogos que ele já possui.
         Mecânicas de jogos favoritados têm peso 2x na pontuação.
+
+        Usa CTEs e GROUP BY em vez de subqueries correlacionadas para evitar
+        N scans em game_mechanics (um por jogo candidato).
         """
         from api.models.user_game_library import UserGameLibrary
         from api.models.user_game_favorite import UserGameFavorite
         from api.models.mechanic import GameMechanic
-        from sqlalchemy import distinct, Integer
+        from sqlalchemy import Integer
 
-        # Subquery: IDs dos jogos que o usuário já tem
-        owned_subq = (
+        # CTE: IDs dos jogos que o usuário já tem
+        owned_cte = (
             select(UserGameLibrary.game_id)
             .where(UserGameLibrary.user_id == user_id)
-            .scalar_subquery()
+            .cte("owned")
         )
 
-        # Subquery: mechanic_ids dos jogos da biblioteca
-        library_mechanic_subq = (
-            select(distinct(GameMechanic.mechanic_id))
-            .where(GameMechanic.game_id.in_(owned_subq))
-            .scalar_subquery()
+        # CTE: mechanic_ids dos jogos da biblioteca
+        lib_mech_cte = (
+            select(GameMechanic.mechanic_id.distinct())
+            .where(GameMechanic.game_id.in_(select(owned_cte.c.game_id)))
+            .cte("lib_mechs")
         )
 
-        # Subquery: IDs dos jogos favoritos
-        fav_subq = (
-            select(UserGameFavorite.game_id)
+        # CTE: mechanic_ids dos jogos favoritos
+        fav_mech_cte = (
+            select(GameMechanic.mechanic_id.distinct())
+            .join(UserGameFavorite, UserGameFavorite.game_id == GameMechanic.game_id)
             .where(UserGameFavorite.user_id == user_id)
-            .scalar_subquery()
+            .cte("fav_mechs")
         )
 
-        # Subquery: mechanic_ids dos jogos favoritos
-        fav_mechanic_subq = (
-            select(distinct(GameMechanic.mechanic_id))
-            .where(GameMechanic.game_id.in_(fav_subq))
-            .scalar_subquery()
+        # CTE: para cada jogo candidato, conta overlaps com biblioteca e favoritos
+        # Filtra na fonte: só entra game_mechanics de mecânicas que o usuário conhece.
+        lib_match = func.count(
+            case((GameMechanic.mechanic_id.in_(select(lib_mech_cte.c.mechanic_id)), literal(1)), else_=None)
+        )
+        fav_match = func.count(
+            case((GameMechanic.mechanic_id.in_(select(fav_mech_cte.c.mechanic_id)), literal(1)), else_=None)
         )
 
-        # Overlap da biblioteca (peso 1)
-        library_overlap = (
-            select(func.count())
-            .where(
-                GameMechanic.game_id == Game.id,
-                GameMechanic.mechanic_id.in_(library_mechanic_subq),
+        scores_cte = (
+            select(
+                GameMechanic.game_id,
+                lib_match.label("lib_score"),
+                fav_match.label("fav_score"),
             )
-            .correlate(Game)
-            .scalar_subquery()
-        )
-
-        # Overlap dos favoritos (peso 2)
-        fav_overlap = (
-            select(func.count())
             .where(
-                GameMechanic.game_id == Game.id,
-                GameMechanic.mechanic_id.in_(fav_mechanic_subq),
+                GameMechanic.mechanic_id.in_(select(lib_mech_cte.c.mechanic_id)),
+                GameMechanic.game_id.not_in(select(owned_cte.c.game_id)),
             )
-            .correlate(Game)
-            .scalar_subquery()
+            .group_by(GameMechanic.game_id)
+            .cte("scores")
         )
 
-        # Score combinado: biblioteca + 2 × favoritos
-        score = library_overlap.cast(Integer) + fav_overlap.cast(Integer) * 2
+        score_expr = (
+            scores_cte.c.lib_score.cast(Integer) + scores_cte.c.fav_score.cast(Integer) * 2
+        )
 
         statement = (
             select(Game)
-            .where(
-                Game.is_active == True,  # noqa: E712
-                Game.id.not_in(owned_subq),
-                library_overlap > 0,
-            )
+            .join(scores_cte, scores_cte.c.game_id == Game.id)
+            .where(Game.is_active == True)  # noqa: E712
             .order_by(
-                score.desc(),
+                score_expr.desc(),
                 nullslast(Game.bayes_rating.desc()),
                 nullslast(Game.rank),
             )
