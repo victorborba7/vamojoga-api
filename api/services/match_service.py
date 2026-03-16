@@ -46,11 +46,11 @@ class MatchService:
 
         # Validar quantidade de jogadores
         num_players = len(data.players)
-        if num_players < game.min_players or num_players > game.max_players:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Número de jogadores deve ser entre {game.min_players} e {game.max_players}",
-            )
+        # if num_players < game.min_players or num_players > game.max_players:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail=f"Número de jogadores deve ser entre {game.min_players} e {game.max_players}",
+        #     )
 
         # Validar jogadores/convidados
         user_ids: list[UUID] = []
