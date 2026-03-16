@@ -33,6 +33,16 @@ async def list_games(
     return await service.list_games(skip=skip, limit=limit)
 
 
+@router.get("/recommendations/", response_model=list[GameResponse])
+async def get_recommendations(
+    limit: int = 10,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[GameResponse]:
+    service = GameService(session)
+    return await service.get_recommendations(current_user.id, limit=limit)
+
+
 @router.get("/search/", response_model=list[GameResponse])
 async def search_games(
     q: str = "",

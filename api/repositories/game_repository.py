@@ -1,4 +1,5 @@
 import re
+import uuid
 from uuid import UUID
 
 from sqlalchemy import case, func, nullslast, or_, select
@@ -121,3 +122,59 @@ class GameRepository:
         await self.session.commit()
         await self.session.refresh(game)
         return game
+
+    async def get_recommendations(
+        self,
+        user_id: uuid.UUID,
+        limit: int = 10,
+    ) -> list[Game]:
+        """
+        Retorna jogos recomendados baseados nas mecânicas dos jogos da
+        biblioteca do usuário, excluindo jogos que ele já possui.
+        Ordenados por número de mecânicas em comum (desc) e depois por rating.
+        """
+        from api.models.user_game_library import UserGameLibrary
+        from api.models.mechanic import GameMechanic
+        from sqlalchemy import distinct, Integer
+
+        # Subquery: IDs dos jogos que o usuário já tem
+        owned_subq = (
+            select(UserGameLibrary.game_id)
+            .where(UserGameLibrary.user_id == user_id)
+            .scalar_subquery()
+        )
+
+        # Subquery: mechanic_ids dos jogos que o usuário tem
+        user_mechanic_subq = (
+            select(distinct(GameMechanic.mechanic_id))
+            .where(GameMechanic.game_id.in_(owned_subq))
+            .scalar_subquery()
+        )
+
+        # Conta quantas mecânicas em comum cada jogo candidato tem
+        overlap_count = (
+            select(func.count())
+            .where(
+                GameMechanic.game_id == Game.id,
+                GameMechanic.mechanic_id.in_(user_mechanic_subq),
+            )
+            .correlate(Game)
+            .scalar_subquery()
+        )
+
+        statement = (
+            select(Game)
+            .where(
+                Game.is_active == True,  # noqa: E712
+                Game.id.not_in(owned_subq),
+                overlap_count > 0,
+            )
+            .order_by(
+                overlap_count.cast(Integer).desc(),
+                nullslast(Game.bayes_rating.desc()),
+                nullslast(Game.rank),
+            )
+            .limit(limit)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())

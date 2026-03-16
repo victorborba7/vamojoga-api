@@ -83,3 +83,7 @@ class GameService:
 
         updated_game = await self.repository.update(game)
         return GameResponse.model_validate(updated_game)
+
+    async def get_recommendations(self, user_id: UUID, limit: int = 10) -> list[GameResponse]:
+        games = await self.repository.get_recommendations(user_id, limit=limit)
+        return [GameResponse.model_validate(g) for g in games]
