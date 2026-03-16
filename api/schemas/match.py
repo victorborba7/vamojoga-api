@@ -24,11 +24,19 @@ class MatchCreate(BaseModel):
     scoring_template_id: UUID | None = None
     match_mode: str = "individual"
     collaborative_scoring: bool = False
+    expansion_ids: list[UUID] = []
     players: list[MatchPlayerCreate] = Field(min_length=1)
 
 
 class PlayerScoreSubmit(BaseModel):
     template_scores: list[TemplateScoreEntry] = []
+
+
+class ExpansionInfo(BaseModel):
+    id: UUID
+    name: str
+    name_pt: str | None = None
+    image_url: str | None = None
 
 
 # --- Response ---
@@ -62,6 +70,7 @@ class MatchResponse(BaseModel):
     scoring_template_id: UUID | None = None
     scoring_template_name: str | None = None
     players: list[MatchPlayerResponse] = []
+    expansions: list[ExpansionInfo] = []
     unlocked_achievements: list[NewlyUnlockedAchievement] = []
     created_at: datetime
 

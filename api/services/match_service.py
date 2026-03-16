@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.match import Match
 from api.models.match_player import MatchPlayer
+from api.models.match_expansion import MatchExpansion
 from api.models.scoring_template import MatchTemplateScore
 from api.models.user import User
 from api.repositories.guest_repository import GuestRepository
@@ -15,7 +16,7 @@ from api.repositories.game_repository import GameRepository
 from api.repositories.match_repository import MatchRepository
 from api.repositories.scoring_template_repository import ScoringTemplateRepository
 from api.repositories.user_repository import UserRepository
-from api.schemas.match import MatchCreate, MatchPlayerResponse, MatchResponse, PlayerScoreSubmit
+from api.schemas.match import MatchCreate, MatchPlayerResponse, MatchResponse, PlayerScoreSubmit, ExpansionInfo
 from api.schemas.scoring_template import MatchTemplateScoreResponse
 from api.services.achievement_service import AchievementService
 from api.services.push_service import PushService
@@ -146,7 +147,20 @@ class MatchService:
         ]
         created_players = await self.match_repo.create_match_players(match_players)
 
-        # Criar scores de template se houver (only for non-collaborative)
+        # Salvar expansões utilizadas
+        expansion_infos: list[ExpansionInfo] = []
+        if data.expansion_ids:
+            for exp_id in data.expansion_ids:
+                exp_game = await self.game_repo.get_by_id(exp_id)
+                if exp_game:
+                    self.session.add(MatchExpansion(match_id=created_match.id, game_id=exp_id))
+                    expansion_infos.append(ExpansionInfo(
+                        id=exp_game.id,
+                        name=exp_game.name,
+                        name_pt=exp_game.name_pt,
+                        image_url=exp_game.image_url,
+                    ))
+            await self.session.flush()
         if not is_collaborative:
             player_map = {
                 (("u", p.user_id) if p.user_id is not None else ("g", p.guest_id)): mp
@@ -214,6 +228,7 @@ class MatchService:
                     )
                     for mp in created_players
                 ],
+                expansions=expansion_infos,
                 unlocked_achievements=all_unlocked,
             )
 
@@ -246,6 +261,7 @@ class MatchService:
                 )
                 for mp in created_players
             ],
+            expansions=expansion_infos,
         )
 
     async def _award_achievements_and_notify(
@@ -544,6 +560,15 @@ class MatchService:
                         scores_submitted_at=p.get("scores_submitted_at"),
                     )
                     for p in m["players"]
+                ],
+                expansions=[
+                    ExpansionInfo(
+                        id=e["id"],
+                        name=e["name"],
+                        name_pt=e.get("name_pt"),
+                        image_url=e.get("image_url"),
+                    )
+                    for e in m.get("expansions", [])
                 ],
             )
             for m in matches

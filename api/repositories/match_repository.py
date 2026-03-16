@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.game import Game
 from api.models.match import Match
+from api.models.match_expansion import MatchExpansion
 from api.models.match_player import MatchPlayer
 from api.models.scoring_template import ScoringTemplate
 from api.models.user import User
@@ -202,6 +203,28 @@ class MatchRepository:
                 "scores_submitted_at": p.scores_submitted_at,
             })
 
+        # Step 4: Get expansions for all matches in one query
+        expansions_stmt = (
+            select(
+                MatchExpansion.match_id,
+                Game.id.label("game_id"),
+                Game.name,
+                Game.name_pt,
+                Game.image_url,
+            )
+            .join(Game, Game.id == MatchExpansion.game_id)
+            .where(MatchExpansion.match_id.in_(match_ids))
+        )
+        expansions_result = await self.session.execute(expansions_stmt)
+        expansions_by_match: dict[UUID, list[dict]] = {}
+        for e in expansions_result.all():
+            expansions_by_match.setdefault(e.match_id, []).append({
+                "id": e.game_id,
+                "name": e.name,
+                "name_pt": e.name_pt,
+                "image_url": e.image_url,
+            })
+
         # Build result
         result = []
         for m in matches:
@@ -219,6 +242,7 @@ class MatchRepository:
                 "status": m.status,
                 "created_at": m.created_at,
                 "players": players_by_match.get(m.id, []),
+                "expansions": expansions_by_match.get(m.id, []),
             })
         return result
 
