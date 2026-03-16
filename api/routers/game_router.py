@@ -67,6 +67,16 @@ async def get_game(
     return await service.get_game(game_id)
 
 
+@router.get("/{game_id}/expansions", response_model=list[GameResponse])
+async def get_game_expansions(
+    game_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(get_current_user),
+) -> list[GameResponse]:
+    service = GameService(session)
+    return await service.get_expansions(game_id)
+
+
 @router.patch("/{game_id}", response_model=GameResponse)
 async def update_game(
     game_id: UUID,

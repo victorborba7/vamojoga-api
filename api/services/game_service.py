@@ -87,3 +87,7 @@ class GameService:
     async def get_recommendations(self, user_id: UUID, limit: int = 10) -> list[GameResponse]:
         games = await self.repository.get_recommendations(user_id, limit=limit)
         return [GameResponse.model_validate(g) for g in games]
+
+    async def get_expansions(self, game_id: UUID) -> list[GameResponse]:
+        games = await self.repository.get_expansions(game_id)
+        return [GameResponse.model_validate(g) for g in games]

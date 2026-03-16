@@ -123,6 +123,19 @@ class GameRepository:
         await self.session.refresh(game)
         return game
 
+    async def get_expansions(self, game_id: UUID) -> list[Game]:
+        """Retorna expansões do jogo, ordenadas por rank e nome."""
+        statement = (
+            select(Game)
+            .where(
+                Game.parent_game_id == game_id,
+                Game.is_active == True,  # noqa: E712
+            )
+            .order_by(nullslast(Game.rank), Game.name)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
+
     async def get_recommendations(
         self,
         user_id: uuid.UUID,
